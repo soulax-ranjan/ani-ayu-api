@@ -1,9 +1,6 @@
 import { supabase } from '../lib/supabase.js'
 
 export default async function uploadRoutes(fastify, opts) {
-  // Register multipart plugin for file uploads
-  await fastify.register(import('@fastify/multipart'))
-
   // POST /api/upload/image - Upload single image to Supabase Storage
   fastify.post('/upload/image', {
     schema: {

@@ -60,7 +60,11 @@ await fastify.register(cors, {
 })
 
 // Register multipart for file uploads
-await fastify.register(multipart)
+await fastify.register(multipart, {
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50 MB
+  }
+})
 
 // Register Swagger for API documentation
 await fastify.register(swagger, {

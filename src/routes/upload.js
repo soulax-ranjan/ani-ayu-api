@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase.js'
+import { supabase, supabaseAdmin } from '../lib/supabase.js'
 
 export default async function uploadRoutes(fastify, opts) {
   // POST /api/upload/image - Upload single image to Supabase Storage
@@ -49,15 +49,15 @@ export default async function uploadRoutes(fastify, opts) {
       const fileExt = data.filename.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
       
-      // Convert stream to buffer
-      const buffer = await data.toBuffer()
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      // Upload to Supabase Storage using stream
+      // duplex: 'half' is required for Node.js environments with node-fetch under the hood
+      // Use supabaseAdmin to bypass RLS
+      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
         .from('product-images')
-        .upload(fileName, buffer, {
+        .upload(fileName, data.file, {
           contentType: data.mimetype,
-          upsert: false
+          upsert: false,
+          duplex: 'half'
         })
 
       if (uploadError) {
@@ -69,7 +69,7 @@ export default async function uploadRoutes(fastify, opts) {
       }
 
       // Get public URL
-      const { data: urlData } = supabase.storage
+      const { data: urlData } = supabaseAdmin.storage
         .from('product-images')
         .getPublicUrl(fileName)
 
@@ -115,61 +115,57 @@ export default async function uploadRoutes(fastify, opts) {
     }
   }, async (request, reply) => {
     try {
-      const files = []
+      const uploadResults = []
       const parts = request.parts()
       
       for await (const part of parts) {
         if (part.file) {
-          files.push(part)
+          try {
+             // Validate file type
+            if (!part.mimetype.startsWith('image/')) {
+              // We must consume the stream even if we ignore it to prevent hanging
+              await part.toBuffer() 
+              continue 
+            }
+
+            // Generate unique filename
+            const fileExt = part.filename.split('.').pop()
+            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+            
+            // Upload to Supabase Storage using stream
+            // Use supabaseAdmin to bypass RLS
+            const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+              .from('product-images')
+              .upload(fileName, part.file, {
+                contentType: part.mimetype,
+                upsert: false,
+                duplex: 'half'
+              })
+
+            if (!uploadError) {
+              // Get public URL
+              const { data: urlData } = supabaseAdmin.storage
+                .from('product-images')
+                .getPublicUrl(fileName)
+
+              uploadResults.push({
+                url: urlData.publicUrl,
+                fileName: fileName
+              })
+            } else {
+              console.error('File upload error:', uploadError)
+            }
+          } catch (fileError) {
+            console.error('File processing error:', fileError)
+          }
         }
       }
 
-      if (files.length === 0) {
+      if (uploadResults.length === 0) {
         return reply.status(400).send({
           error: 'No files uploaded',
           message: 'Please select files to upload'
         })
-      }
-
-      const uploadResults = []
-
-      for (const file of files) {
-        try {
-          // Validate file type
-          if (!file.mimetype.startsWith('image/')) {
-            continue // Skip non-image files
-          }
-
-          // Generate unique filename
-          const fileExt = file.filename.split('.').pop()
-          const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-          
-          // Convert stream to buffer
-          const buffer = await file.toBuffer()
-
-          // Upload to Supabase Storage
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('product-images')
-            .upload(fileName, buffer, {
-              contentType: file.mimetype,
-              upsert: false
-            })
-
-          if (!uploadError) {
-            // Get public URL
-            const { data: urlData } = supabase.storage
-              .from('product-images')
-              .getPublicUrl(fileName)
-
-            uploadResults.push({
-              url: urlData.publicUrl,
-              fileName: fileName
-            })
-          }
-        } catch (fileError) {
-          console.error('File upload error:', fileError)
-          // Continue with other files
-        }
       }
 
       return {

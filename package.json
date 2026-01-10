@@ -1,0 +1,37 @@
+{
+  "name": "ani-ayu-api",
+  "version": "1.0.0",
+  "description": "API backend for Ani & Ayu e-commerce platform",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "build": "echo 'No build step for ani-ayu-api'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "fastify",
+    "api",
+    "ecommerce",
+    "nodejs"
+  ],
+  "author": "Ani & Ayu",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/cors": "^8.4.0",
+    "@fastify/jwt": "^7.2.4",
+    "@fastify/multipart": "^8.3.1",
+    "@fastify/swagger": "^8.12.0",
+    "@fastify/swagger-ui": "^2.1.0",
+    "@supabase/supabase-js": "^2.56.0",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.24.3",
+    "fastify-plugin": "^4.5.1",
+    "multer": "^2.0.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

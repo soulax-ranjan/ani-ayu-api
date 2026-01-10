@@ -1,0 +1,536 @@
+import Fastify from 'fastify'
+import cors from '@fastify/cors'
+import swagger from '@fastify/swagger'
+import swaggerUi from '@fastify/swagger-ui'
+import multipart from '@fastify/multipart'
+import jwt from '@fastify/jwt'
+import dotenv from 'dotenv'
+import { supabaseAdmin } from './lib/supabase.js'
+
+// Import route handlers
+import productRoutes from './routes/products.js'
+import cartRoutes from './routes/cart.js'
+import categoryRoutes from './routes/categories.js'
+import orderRoutes from './routes/orders.js'
+import authRoutes from './routes/auth.js'
+import homepageRoutes from './routes/homepage.js'
+
+// Load environment variables
+dotenv.config()
+
+const fastify = Fastify({
+  logger: {
+    level: process.env.NODE_ENV === 'production' ? 'warn' : 'info'
+  }
+})
+
+// Register JWT
+await fastify.register(jwt, {
+  secret: process.env.JWT_SECRET || 'your-fallback-secret',
+  sign: {
+    expiresIn: '7d'
+  }
+})
+
+// JWT Authentication decorator
+fastify.decorate('authenticate', async function (request, reply) {
+  try {
+    await request.jwtVerify()
+  } catch (err) {
+    reply.send(err)
+  }
+})
+
+// Optional JWT Authentication decorator (doesn't fail if no token)
+fastify.decorate('authenticateOptional', async function (request, reply) {
+  try {
+    await request.jwtVerify()
+  } catch (err) {
+    // Don't fail, just continue without user
+    request.user = null
+  }
+})
+
+// Register CORS
+await fastify.register(cors, {
+  origin: [process.env.FRONTEND_URL || 'http://localhost:3000'],
+  credentials: true
+})
+
+// Register multipart for file uploads
+await fastify.register(multipart)
+
+// Register Swagger for API documentation
+await fastify.register(swagger, {
+  swagger: {
+    info: {
+      title: 'Ani & Ayu API',
+      description: 'E-commerce API for children\'s ethnic wear',
+      version: '1.0.0'
+    },
+    host: `localhost:${process.env.PORT || 3001}`,
+    schemes: ['http'],
+    consumes: ['application/json'],
+    produces: ['application/json'],
+    securityDefinitions: {
+      bearerAuth: {
+        type: 'apiKey',
+        name: 'Authorization',
+        in: 'header',
+        description: 'Enter JWT token in format: Bearer <token>'
+      }
+    },
+    tags: [
+      { name: 'Products', description: 'Product related endpoints' },
+      { name: 'Cart', description: 'Shopping cart endpoints' },
+      { name: 'Categories', description: 'Category related endpoints' },
+      { name: 'Orders', description: 'Order management endpoints' },
+      { name: 'Auth', description: 'Authentication endpoints' },
+      { name: 'Homepage', description: 'Homepage content endpoints' }
+    ]
+  }
+})
+
+await fastify.register(swaggerUi, {
+  routePrefix: '/docs',
+  uiConfig: {
+    docExpansion: 'full',
+    deepLinking: false
+  }
+})
+
+// Health check endpoint
+fastify.get('/', async (request, reply) => {
+  return { 
+    message: 'Ani & Ayu API Server',
+    version: '1.0.0',
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  }
+})
+
+fastify.get('/health', async (request, reply) => {
+  return { 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  }
+})
+
+// Test route to verify API routing works
+fastify.get('/api/test', async (request, reply) => {
+  return { 
+    message: 'API routing works!',
+    timestamp: new Date().toISOString()
+  }
+})
+
+// Test homepage banners route directly in server
+fastify.get('/api/homepage/banners', async (request, reply) => {
+  return {
+    banners: [
+      {
+        id: 'banner-1',
+        title: 'Festive Collection 2024',
+        subtitle: 'Beautiful Traditional Wear',
+        description: 'Discover our latest collection of premium ethnic wear for your little ones',
+        image: '/assets/designs/design-1.jpg',
+        ctaText: 'Shop Now',
+        ctaLink: '/products?category=festive',
+        backgroundColor: '#FF6B6B',
+        textColor: '#FFFFFF',
+        featured: true,
+        order: 1
+      },
+      {
+        id: 'banner-2', 
+        title: 'Wedding Special',
+        subtitle: 'Make Every Moment Magical',
+        description: 'Elegant wedding wear collection for special occasions',
+        image: '/assets/designs/design-2.jpg',
+        ctaText: 'Explore Collection',
+        ctaLink: '/products?category=wedding',
+        backgroundColor: '#4ECDC4',
+        textColor: '#FFFFFF',
+        featured: true,
+        order: 2
+      },
+      {
+        id: 'banner-3',
+        title: 'Twin Sets',
+        subtitle: 'Perfect for Siblings',
+        description: 'Coordinated outfits for your little ones to look adorable together',
+        image: '/assets/designs/design-3.webp',
+        ctaText: 'View Twins Collection',
+        ctaLink: '/products?category=twins',
+        backgroundColor: '#45B7D1',
+        textColor: '#FFFFFF',
+        featured: true,
+        order: 3
+      }
+    ]
+  }
+})
+
+// Homepage best sellers route - fetch from database
+// Homepage best sellers route - fetch from database
+fastify.get('/api/homepage/best-sellers', async (request, reply) => {
+  try {
+    const { data: products, error } = await supabaseAdmin
+      .from('products')
+      .select(`
+        id,
+        name,
+        price,
+        original_price,
+        image_url,
+        rating,
+        review_count,
+        featured
+      `)
+      .eq('featured', true)
+      .order('rating', { ascending: false })
+      .order('review_count', { ascending: false })
+      .limit(6);
+
+    if (error) {
+      console.error('Error fetching best sellers:', error);
+      throw error;
+    }
+
+    const bestSellers = products.map((product, index) => ({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      originalPrice: product.original_price,
+      image: product.image_url,
+      rating: product.rating,
+      reviewCount: product.review_count,
+      salesCount: Math.floor(product.rating * product.review_count * 10),
+      rank: index + 1
+    }));
+
+    return { bestSellers };
+  } catch (error) {
+    console.error('Database error, using fallback data:', error);
+    
+    // Fallback data if database fails
+    const fallbackBestSellers = [
+      {
+        id: 'g001',
+        name: 'Pink Princess Lehenga',
+        price: 2799,
+        originalPrice: 3499,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/pink-princess-lehenga-main.webp',
+        rating: 4.9,
+        reviewCount: 68,
+        salesCount: 245,
+        rank: 1
+      },
+      {
+        id: 'f002',
+        name: 'Diwali Special Gold Set',
+        price: 2299,
+        originalPrice: 2899,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/festive/diwali-gold-set-main.webp',
+        rating: 4.7,
+        reviewCount: 56,
+        salesCount: 189,
+        rank: 2
+      }
+    ];
+
+    return { bestSellers: fallbackBestSellers };
+  }
+})
+
+// Fallback data in case database is not available
+const fallbackBestSellers = [
+      {
+        id: 'g001',
+        name: 'Pink Princess Lehenga',
+        price: 2799,
+        originalPrice: 3499,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/pink-princess-lehenga-main.webp',
+        rating: 4.9,
+        reviewCount: 68,
+        salesCount: 245,
+        rank: 1
+      },
+      {
+        id: 'f002',
+        name: 'Diwali Special Gold Set',
+        price: 2299,
+        originalPrice: 2899,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/festive/diwali-gold-set-main.webp',
+        rating: 4.7,
+        reviewCount: 56,
+        salesCount: 189,
+        rank: 2
+      },
+      {
+        id: 'g005',
+        name: 'Yellow Cotton Kurti',
+        price: 799,
+        originalPrice: 1099,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/yellow-cotton-kurti-main.webp',
+        rating: 4.3,
+        reviewCount: 47,
+        salesCount: 156,
+        rank: 3
+      },
+      {
+        id: 'b005',
+        name: 'Orange Cotton Kurta',
+        price: 899,
+        originalPrice: 1199,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/boys/orange-cotton-kurta-main.webp',
+        rating: 4.4,
+        reviewCount: 52,
+        salesCount: 134,
+        rank: 4
+      },
+      {
+        id: 'g002',
+        name: 'Purple Anarkali Dress',
+        price: 1999,
+        originalPrice: 2599,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/purple-anarkali-dress-main.webp',
+        rating: 4.7,
+        reviewCount: 41,
+        salesCount: 128,
+        rank: 5
+      },
+      {
+        id: 'f003',
+        name: 'Navratri Chaniya Choli',
+        price: 1899,
+        originalPrice: 2399,
+        image: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/festive/navratri-chaniya-choli-main.webp',
+        rating: 4.6,
+        reviewCount: 38,
+        salesCount: 98,
+        rank: 6
+      }
+    ];
+
+    return { bestSellers: fallbackBestSellers };
+  }
+})
+
+// Products API endpoint
+fastify.get('/api/products', async (request, reply) => {
+  // Sample products data
+  const products = [
+    {
+      id: 'g001',
+      name: 'Pink Princess Lehenga',
+      slug: 'pink-princess-lehenga',
+      description: 'Beautiful pink lehenga with golden work. Perfect for little princesses on special occasions.',
+      category_id: 'girls',
+      price: 2799,
+      original_price: 3499,
+      image_url: 'https://product-images.s3.amazonaws.com/girls/pink-princess-lehenga-main.jpg',
+      images: [
+        'https://product-images.s3.amazonaws.com/girls/pink-princess-lehenga-main.jpg', 
+        'https://product-images.s3.amazonaws.com/girls/pink-princess-lehenga-detail.jpg',
+        'https://product-images.s3.amazonaws.com/girls/pink-princess-lehenga-back.jpg'
+      ],
+      rating: 4.9,
+      review_count: 68,
+      sizes: ['XS', 'S', 'M', 'L', 'XL'],
+      colors: ['Pink', 'Gold'],
+      material: 'Georgette',
+      occasion: 'Wedding, Festival',
+      age_range: '3-12 years',
+      features: ['Heavy golden embroidery', 'Comfortable inner lining', 'Matching dupatta', 'Princess style cut', 'Premium fabric quality'],
+      in_stock: true,
+      featured: true,
+      created_at: '2024-08-01T00:00:00Z',
+      updated_at: '2024-08-15T00:00:00Z'
+    },
+    {
+      id: 'b001',
+      name: 'Royal Blue Silk Kurta Set',
+      slug: 'royal-blue-silk-kurta-set',
+      description: 'Elegant royal blue silk kurta with matching pajama. Perfect for festivals and special occasions.',
+      category_id: 'boys',
+      price: 1899,
+      original_price: 2499,
+      image_url: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/boys/royal-blue-kurta-set-main.webp',
+      images: [
+        'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/boys/royal-blue-kurta-set-main.webp', 
+        'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/boys/royal-blue-kurta-set-detail.webp'
+      ],
+      rating: 4.8,
+      review_count: 45,
+      sizes: ['XS', 'S', 'M', 'L'],
+      colors: ['Royal Blue', 'Gold'],
+      material: 'Pure Silk',
+      occasion: 'Festival, Wedding',
+      age_range: '3-8 years',
+      features: ['Comfortable cotton lining', 'Easy care machine washable', 'Matching pajama included', 'Gold thread embroidery', 'Breathable fabric'],
+      in_stock: true,
+      featured: true,
+      created_at: '2024-08-01T00:00:00Z',
+      updated_at: '2024-08-10T00:00:00Z'
+    },
+    {
+      id: 'f001',
+      name: 'Twin Set - Royal Blue & Pink',
+      slug: 'twin-set-royal-blue-pink',
+      description: 'Matching brother-sister set in royal blue and pink. Perfect for festivals and family functions.',
+      category_id: 'festive',
+      price: 3799,
+      original_price: 4999,
+      image_url: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/festive/twin-set-royal-blue-pink-main.webp',
+      images: ['https://product-images.s3.amazonaws.com/festive/twin-set-royal-blue-pink-main.jpg'],
+      rating: 4.9,
+      review_count: 33,
+      sizes: ['XS', 'S', 'M', 'L', 'XL'],
+      colors: ['Royal Blue', 'Pink', 'Gold'],
+      material: 'Silk Blend',
+      occasion: 'Festival, Family Functions',
+      age_range: '3-12 years',
+      features: ['Matching sibling sets', 'Coordinated designs', 'Premium fabric', 'Traditional patterns', 'Complete outfit'],
+      in_stock: true,
+      featured: true,
+      created_at: '2024-08-01T00:00:00Z',
+      updated_at: '2024-08-05T00:00:00Z'
+    }
+  ]
+
+  // Handle query parameters
+  const { category, search, featured, limit = 20, page = 1 } = request.query
+  
+  let filteredProducts = [...products]
+  
+  // Filter by category
+  if (category) {
+    filteredProducts = filteredProducts.filter(p => p.category_id === category)
+  }
+  
+  // Filter by search
+  if (search) {
+    const searchTerm = search.toLowerCase()
+    filteredProducts = filteredProducts.filter(p => 
+      p.name.toLowerCase().includes(searchTerm) ||
+      p.description.toLowerCase().includes(searchTerm) ||
+      p.material.toLowerCase().includes(searchTerm) ||
+      p.occasion.toLowerCase().includes(searchTerm)
+    )
+  }
+  
+  // Filter by featured
+  if (featured === 'true') {
+    filteredProducts = filteredProducts.filter(p => p.featured)
+  }
+  
+  // Pagination
+  const startIndex = (page - 1) * limit
+  const endIndex = startIndex + parseInt(limit)
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex)
+  
+  return {
+    products: paginatedProducts,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: filteredProducts.length,
+      totalPages: Math.ceil(filteredProducts.length / limit)
+    }
+  }
+})
+
+// Single product endpoint
+fastify.get('/api/products/:id', async (request, reply) => {
+  const { id } = request.params
+  
+  // This would normally fetch from database
+  const products = [
+    {
+      id: 'g001',
+      name: 'Pink Princess Lehenga',
+      slug: 'pink-princess-lehenga',
+      description: 'Beautiful pink lehenga with golden work. Perfect for little princesses on special occasions. This exquisite piece features intricate golden embroidery work that catches the light beautifully. The comfortable inner lining ensures your little one can move freely while looking absolutely stunning.',
+      category_id: 'girls',
+      price: 2799,
+      original_price: 3499,
+      image_url: 'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/pink-princess-lehenga-main.webp',
+      images: [
+        'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/pink-princess-lehenga-main.webp', 
+        'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/pink-princess-lehenga-detail.webp',
+        'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/pink-princess-lehenga-back.webp',
+        'https://ldfykcszxyjrferywgjb.supabase.co/storage/v1/object/public/product-images/girls/pink-princess-lehenga-worn.webp'
+      ],
+      rating: 4.9,
+      review_count: 68,
+      sizes: ['XS', 'S', 'M', 'L', 'XL'],
+      colors: ['Pink', 'Gold'],
+      material: 'Georgette',
+      occasion: 'Wedding, Festival',
+      age_range: '3-12 years',
+      features: ['Heavy golden embroidery', 'Comfortable inner lining', 'Matching dupatta', 'Princess style cut', 'Premium fabric quality'],
+      in_stock: true,
+      featured: true,
+      created_at: '2024-08-01T00:00:00Z',
+      updated_at: '2024-08-15T00:00:00Z'
+    }
+  ]
+  
+  const product = products.find(p => p.id === id)
+  
+  if (!product) {
+    return reply.code(404).send({
+      error: 'Product not found',
+      message: `Product with id ${id} does not exist`
+    })
+  }
+  
+  return product
+})
+
+// Register route handlers
+await fastify.register(authRoutes, { prefix: '/api' })
+await fastify.register(productRoutes, { prefix: '/api' })
+await fastify.register(cartRoutes, { prefix: '/api' })
+await fastify.register(categoryRoutes, { prefix: '/api' })
+await fastify.register(orderRoutes, { prefix: '/api' })
+await fastify.register(homepageRoutes, { prefix: '/api' })
+
+// Global error handler
+fastify.setErrorHandler((error, request, reply) => {
+  const { validation, validationContext } = error
+
+  if (validation) {
+    return reply.status(400).send({
+      error: 'Validation Error',
+      message: `Validation failed for ${validationContext}`,
+      details: validation
+    })
+  }
+
+  request.log.error(error)
+  
+  return reply.status(error.statusCode || 500).send({
+    error: error.name || 'Internal Server Error',
+    message: error.message || 'An unexpected error occurred'
+  })
+})
+
+// Start server
+const start = async () => {
+  try {
+    const port = process.env.PORT || 3001
+    const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'
+    
+    await fastify.listen({ port, host })
+    fastify.log.info(`Server running at http://${host}:${port}`)
+    fastify.log.info(`API Documentation: http://${host}:${port}/docs`)
+  } catch (err) {
+    fastify.log.error(err)
+    process.exit(1)
+  }
+}
+
+start()

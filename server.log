@@ -1,0 +1,16 @@
+(node:32246) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{"level":30,"time":1758630057999,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","msg":"Server listening at http://127.0.0.1:3002"}
+{"level":30,"time":1758630057999,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","msg":"Server running at http://127.0.0.1:3002"}
+{"level":30,"time":1758630057999,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","msg":"API Documentation: http://127.0.0.1:3002/docs"}
+{"level":30,"time":1758630070326,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-1","req":{"method":"GET","url":"/api/homepage","hostname":"127.0.0.1:3002","remoteAddress":"127.0.0.1","remotePort":64287},"msg":"incoming request"}
+{"level":30,"time":1758630070327,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-1","msg":"Route GET:/api/homepage not found"}
+{"level":30,"time":1758630070332,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-1","res":{"statusCode":404},"responseTime":4.973291993141174,"msg":"request completed"}
+{"level":30,"time":1758630070478,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-2","req":{"method":"GET","url":"/favicon.ico","hostname":"127.0.0.1:3002","remoteAddress":"127.0.0.1","remotePort":64287},"msg":"incoming request"}
+{"level":30,"time":1758630070478,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-2","msg":"Route GET:/favicon.ico not found"}
+{"level":30,"time":1758630070478,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-2","res":{"statusCode":404},"responseTime":0.3678339719772339,"msg":"request completed"}
+{"level":30,"time":1758630081641,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-3","req":{"method":"GET","url":"/api/homepage","hostname":"127.0.0.1:3002","remoteAddress":"127.0.0.1","remotePort":64298},"msg":"incoming request"}
+{"level":30,"time":1758630081641,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-3","msg":"Route GET:/api/homepage not found"}
+{"level":30,"time":1758630081641,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-3","res":{"statusCode":404},"responseTime":0.3781249523162842,"msg":"request completed"}
+{"level":30,"time":1758630099338,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-4","req":{"method":"HEAD","url":"/api/products","hostname":"127.0.0.1:3002","remoteAddress":"127.0.0.1","remotePort":64315},"msg":"incoming request"}
+{"level":30,"time":1758630099338,"pid":32246,"hostname":"Smritis-MacBook-Pro.local","reqId":"req-4","res":{"statusCode":200},"responseTime":0.5249590277671814,"msg":"request completed"}

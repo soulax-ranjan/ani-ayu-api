@@ -1,0 +1,104 @@
+{
+  "info": {
+    "_postman_id": "ani-ayu-api-collection-2025",
+    "name": "Ani & Ayu API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection for Ani & Ayu E-commerce API"
+  },
+  "item": [
+    {
+      "name": "Root Info",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/", "protocol": "http", "host": ["localhost"], "port": "3002", "path": [""] }
+      }
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/health", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["health"] }
+      }
+    },
+    {
+      "name": "Products List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/api/products", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "products"] }
+      }
+    },
+    {
+      "name": "Single Product",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/api/products/:id", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "products", ":id"] }
+      }
+    },
+    {
+      "name": "Homepage Banners",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/api/homepage/banners", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "homepage", "banners"] }
+      }
+    },
+    {
+      "name": "Homepage Best Sellers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/api/homepage/best-sellers", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "homepage", "best-sellers"] }
+      }
+    },
+    {
+      "name": "Categories List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/api/categories", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "categories"] }
+      }
+    },
+    {
+      "name": "Cart (example)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/api/cart", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "cart"] }
+      }
+    },
+    {
+      "name": "Orders (example)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/api/orders", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "orders"] }
+      }
+    },
+    {
+      "name": "Auth Login (example)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"yourpassword\"\n}"
+        },
+        "url": { "raw": "http://localhost:3002/api/auth/login", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "Swagger Docs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "http://localhost:3002/docs", "protocol": "http", "host": ["localhost"], "port": "3002", "path": ["docs"] }
+      }
+    }
+  ]
+}

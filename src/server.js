@@ -74,8 +74,10 @@ await fastify.register(swagger, {
       description: 'E-commerce API for children\'s ethnic wear',
       version: '1.0.0'
     },
-    host: `localhost:${process.env.PORT || 3002}`,
-    schemes: ['http'],
+    host: process.env.NODE_ENV === 'production' 
+      ? process.env.API_HOST 
+      : `localhost:${process.env.PORT || 3002}`,
+    schemes: process.env.NODE_ENV === 'production' ? ['https'] : ['http'],
     consumes: ['application/json'],
     produces: ['application/json'],
     securityDefinitions: {

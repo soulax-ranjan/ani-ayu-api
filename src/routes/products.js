@@ -161,6 +161,160 @@ async function productRoutes(fastify, options) {
     }
   })
 
+  // PUT /api/products/:id - Update a product
+  fastify.put('/products/:id', {
+    schema: {
+      tags: ['Products'],
+      description: 'Update an existing product',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' }
+        }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          slug: { type: 'string' },
+          description: { type: 'string' },
+          short_description: { type: 'string' },
+          price: { type: 'number' },
+          original_price: { type: 'number' },
+          discount_percent: { type: 'number' },
+          currency: { type: 'string' },
+          image_url: { type: 'string' },
+          images: { type: 'array', items: { type: 'string' } },
+          video_url: { type: 'string' },
+          sizes: { type: 'array', items: { type: 'string' } },
+          colors: { type: 'array', items: { type: 'string' } },
+          category_id: { type: 'string', format: 'uuid' },
+          material: { type: 'string' },
+          occasion: { type: 'string' },
+          age_range: { type: 'string' },
+          features: { type: 'array', items: { type: 'string' } },
+          in_stock: { type: 'boolean' },
+          featured: { type: 'boolean' },
+          sku: { type: 'string' },
+          barcode: { type: 'string' },
+          brand: { type: 'string' },
+          tags: { type: 'array', items: { type: 'string' } },
+          specifications: { type: 'object' },
+          stock_quantity: { type: 'number' },
+          low_stock_threshold: { type: 'number' },
+          shipping_weight: { type: 'number' },
+          dimensions: { type: 'object' },
+          return_policy: { type: 'string' },
+          warranty: { type: 'string' },
+          meta_title: { type: 'string' },
+          meta_description: { type: 'string' },
+          meta_keywords: { type: 'string' },
+          status: { type: 'string', enum: ['active', 'draft', 'archived'] },
+          customizable: { type: 'boolean' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params
+      
+      const zBody = z.object({
+        name: z.string().min(1).optional(),
+        slug: z.string().optional(),
+        description: z.string().optional(),
+        short_description: z.string().optional(),
+        price: z.number().min(0).optional(),
+        original_price: z.number().optional(),
+        discount_percent: z.number().optional(),
+        currency: z.string().optional(),
+        image_url: z.string().url().optional(),
+        images: z.array(z.string().url()).optional(),
+        video_url: z.string().url().optional(),
+        sizes: z.array(z.string()).optional(),
+        colors: z.array(z.string()).optional(),
+        category_id: z.string().uuid().optional(),
+        material: z.string().optional(),
+        occasion: z.string().optional(),
+        age_range: z.string().optional(),
+        features: z.array(z.string()).optional(),
+        in_stock: z.boolean().optional(),
+        featured: z.boolean().optional(),
+        sku: z.string().optional(),
+        barcode: z.string().optional(),
+        brand: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        specifications: z.record(z.any()).optional(),
+        stock_quantity: z.number().int().min(0).optional(),
+        low_stock_threshold: z.number().int().min(0).optional(),
+        shipping_weight: z.number().min(0).optional(),
+        dimensions: z.record(z.any()).optional(),
+        return_policy: z.string().optional(),
+        warranty: z.string().optional(),
+        meta_title: z.string().optional(),
+        meta_description: z.string().optional(),
+        meta_keywords: z.string().optional(),
+        status: z.enum(['active', 'draft', 'archived']).optional(),
+        customizable: z.boolean().optional()
+      })
+
+      const body = zBody.parse(request.body)
+
+      // If slug is updated, check for uniqueness (excluding current product)
+      if (body.slug) {
+        const { data: existing } = await supabaseAdmin
+          .from(TABLES.PRODUCTS)
+          .select('id')
+          .eq('slug', body.slug)
+          .neq('id', id)
+          .single()
+
+        if (existing) {
+          // If collision, append random string
+          body.slug = `${body.slug}-${Math.random().toString(36).substring(2, 7)}`
+        }
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from(TABLES.PRODUCTS)
+        .update(body)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) {
+        return handleSupabaseError(error, reply)
+      }
+
+      if (!data) {
+        return reply.status(404).send({
+          error: 'Product Not Found',
+          message: `Product with ID '${id}' not found`
+        })
+      }
+
+      return {
+        success: true,
+        message: 'Product updated successfully',
+        product: data
+      }
+
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          error: 'Validation Error',
+          message: 'Invalid input data',
+          details: error.errors
+        })
+      }
+      
+      console.error('Update product error:', error)
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to update product'
+      })
+    }
+  })
+
   // GET /api/products - Get all products with filtering and sorting
   console.log('📦 Registering GET /products route')
   fastify.get('/products', {
@@ -526,6 +680,75 @@ async function productRoutes(fastify, options) {
     return {
       products: relatedProducts || [],
       total: relatedProducts?.length || 0
+    }
+  })
+
+  // DELETE /api/products/:id - Delete product
+  fastify.delete('/products/:id', {
+    schema: {
+      tags: ['Products'],
+      description: 'Delete a product',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        },
+        404: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params
+
+      // Check if product exists
+      const { data: product, error: fetchError } = await supabaseAdmin
+        .from(TABLES.PRODUCTS)
+        .select('id')
+        .eq('id', id)
+        .single()
+
+      if (fetchError || !product) {
+         return reply.status(404).send({
+          error: 'Product Not Found',
+          message: `Product with ID '${id}' not found`
+        })
+      }
+
+      // Delete the product
+      const { error: deleteError } = await supabaseAdmin
+        .from(TABLES.PRODUCTS)
+        .delete()
+        .eq('id', id)
+
+      if (deleteError) {
+        return handleSupabaseError(deleteError, reply)
+      }
+
+      return {
+        success: true,
+        message: 'Product deleted successfully'
+      }
+
+    } catch (error) {
+       return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to delete product'
+      })
     }
   })
 }

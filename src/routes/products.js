@@ -24,6 +24,143 @@ async function productRoutes(fastify, options) {
     offset: z.union([z.string(), z.number()]).transform(val => typeof val === 'string' ? Number(val) : val).default(0)
   })
 
+  // POST /api/products - Create a new product
+  fastify.post('/products', {
+    // Only allow authenticated users to create products
+    // onRequest: [fastify.authenticate], 
+    schema: {
+      tags: ['Products'],
+      description: 'Create a new product with all details',
+      body: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          slug: { type: 'string' },
+          description: { type: 'string' },
+          short_description: { type: 'string' },
+          price: { type: 'number' },
+          original_price: { type: 'number' },
+          discount_percent: { type: 'number' },
+          currency: { type: 'string', default: 'INR' },
+          image_url: { type: 'string' },
+          images: { type: 'array', items: { type: 'string' } },
+          video_url: { type: 'string' },
+          sizes: { type: 'array', items: { type: 'string' } },
+          colors: { type: 'array', items: { type: 'string' } },
+          category_id: { type: 'string', format: 'uuid' },
+          material: { type: 'string' },
+          occasion: { type: 'string' },
+          age_range: { type: 'string' },
+          features: { type: 'array', items: { type: 'string' } },
+          in_stock: { type: 'boolean' },
+          featured: { type: 'boolean' },
+          sku: { type: 'string' },
+          barcode: { type: 'string' },
+          brand: { type: 'string' },
+          tags: { type: 'array', items: { type: 'string' } },
+          specifications: { type: 'object' },
+          stock_quantity: { type: 'number' },
+          low_stock_threshold: { type: 'number' },
+          shipping_weight: { type: 'number' },
+          dimensions: { type: 'object' },
+          return_policy: { type: 'string' },
+          warranty: { type: 'string' },
+          meta_title: { type: 'string' },
+          meta_description: { type: 'string' },
+          meta_keywords: { type: 'string' },
+          status: { type: 'string', enum: ['active', 'draft', 'archived'] },
+          customizable: { type: 'boolean' }
+        },
+        required: ['name', 'price', 'category_id']
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const zBody = z.object({
+        name: z.string().min(1),
+        slug: z.string().optional(),
+        description: z.string().optional(),
+        short_description: z.string().optional(),
+        price: z.number().min(0),
+        original_price: z.number().optional(),
+        discount_percent: z.number().optional(),
+        currency: z.string().default('INR').optional(),
+        image_url: z.string().url().optional(),
+        images: z.array(z.string().url()).optional(),
+        video_url: z.string().url().optional(),
+        sizes: z.array(z.string()).optional(),
+        colors: z.array(z.string()).optional(),
+        category_id: z.string().uuid(),
+        material: z.string().optional(),
+        occasion: z.string().optional(),
+        age_range: z.string().optional(),
+        features: z.array(z.string()).optional(),
+        in_stock: z.boolean().default(true).optional(),
+        featured: z.boolean().default(false).optional(),
+        // stock_quantity: z.number().int().min(0).default(0).optional(), // Removing to match requested fields explicitly
+        sku: z.string().optional(),
+        barcode: z.string().optional(),
+        brand: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        specifications: z.record(z.any()).optional(),
+        stock_quantity: z.number().int().min(0).optional(),
+        low_stock_threshold: z.number().int().min(0).optional(),
+        shipping_weight: z.number().min(0).optional(),
+        dimensions: z.record(z.any()).optional(),
+        return_policy: z.string().optional(),
+        warranty: z.string().optional(),
+        meta_title: z.string().optional(),
+        meta_description: z.string().optional(),
+        meta_keywords: z.string().optional(),
+        status: z.enum(['active', 'draft', 'archived']).default('active').optional(),
+        customizable: z.boolean().default(false).optional()
+      })
+
+      const body = zBody.parse(request.body)
+
+      // Auto-generate slug if not provided
+      if (!body.slug && body.name) {
+        body.slug = body.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)+/g, '') + 
+          '-' + Math.random().toString(36).substring(2, 7)
+      }
+
+      // Insert into database
+      const { data, error } = await supabaseAdmin
+        .from(TABLES.PRODUCTS)
+        .insert([body])
+        .select()
+        .single()
+
+      if (error) {
+        return handleSupabaseError(error, reply)
+      }
+
+      reply.code(201).send({
+        success: true,
+        message: 'Product created successfully',
+        product: data
+      })
+
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          error: 'Validation Error',
+          message: 'Invalid input data',
+          details: error.errors
+        })
+      }
+      
+      console.error('Create product error:', error)
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to create product'
+      })
+    }
+  })
+
   // GET /api/products - Get all products with filtering and sorting
   console.log('📦 Registering GET /products route')
   fastify.get('/products', {

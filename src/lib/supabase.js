@@ -34,11 +34,13 @@ export { supabase, supabaseAdmin }
 // Database table names
 export const TABLES = {
   PRODUCTS: 'products',
-  CATEGORIES: 'categories', 
+  CATEGORIES: 'categories',
+  USERS: 'users',
+  CARTS: 'carts',
   CART_ITEMS: 'cart_items',
+  ADDRESSES: 'addresses',
   ORDERS: 'orders',
   ORDER_ITEMS: 'order_items',
-  USERS: 'users',
   HOMEPAGE_BANNERS: 'homepage_banners',
   TESTIMONIALS: 'testimonials'
 }

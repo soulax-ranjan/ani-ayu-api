@@ -1,345 +1,242 @@
 import fp from 'fastify-plugin'
-import { supabaseAdmin, TABLES } from '../lib/supabase.js'
+import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
 
 async function cartRoutes(fastify, options) {
   const { z } = await import('zod')
 
-  // Check if Supabase is configured
-  const useSupabase = process.env.SUPABASE_URL && process.env.SUPABASE_URL !== 'your-supabase-url'
-  
-  // In-memory cart storage (fallback when Supabase not configured)
-  const memoryCart = new Map()
-
   // Validation schemas
   const addToCartSchema = z.object({
-    sessionId: z.string(),
-    productId: z.string(),
-    size: z.string(),
-    quantity: z.number().min(1).max(10),
-    price: z.number()
-  })
-
-  const updateCartSchema = z.object({
-    quantity: z.number().min(0).max(10)
+    productId: z.string().uuid(),
+    quantity: z.number().min(1).default(1),
+    size: z.string().optional(),
+    color: z.string().optional()
   })
 
   const updateCartItemSchema = z.object({
-    quantity: z.number().min(0).max(10)
+    quantity: z.number().min(0)
   })
 
-  // Helper function to get or create cart
-  const getCart = (sessionId) => {
-    if (!carts.has(sessionId)) {
-      carts.set(sessionId, {
-        sessionId,
-        items: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      })
+  // Helper to get active cart
+  const getActiveCart = async (request) => {
+    const userId = request.user?.sub
+    const guestId = request.cookies.guest_id
+
+    if (!userId && !guestId) {
+      throw { status: 400, message: 'No session identifier' }
     }
-    return carts.get(sessionId)
+
+    let query = supabaseAdmin.from(TABLES.CARTS).select('id')
+
+    if (userId) {
+      query = query.eq('user_id', userId)
+    } else {
+      query = query.eq('guest_id', guestId)
+    }
+
+    let { data: cart, error } = await query.single()
+
+    if (!cart && !error) {
+      // Create new cart
+      const { data: newCart, error: createError } = await supabaseAdmin
+        .from(TABLES.CARTS)
+        .insert(userId ? { user_id: userId } : { guest_id: guestId })
+        .select()
+        .single()
+      
+      if (createError) throw createError
+      cart = newCart
+    } else if (error && error.code !== 'PGRST116') {
+      throw error
+    }
+
+    if (!cart) {
+         const { data: newCart, error: createError } = await supabaseAdmin
+        .from(TABLES.CARTS)
+        .insert(userId ? { user_id: userId } : { guest_id: guestId })
+        .select()
+        .single()
+         if (createError) throw createError
+         cart = newCart
+    }
+
+    return cart
   }
 
-  // POST /api/cart/add - Add item to cart
+  // POST /cart/add
   fastify.post('/cart/add', {
+    preHandler: [fastify.authenticateOptional],
     schema: {
       tags: ['Cart'],
       description: 'Add item to cart',
       body: {
         type: 'object',
-        required: ['sessionId', 'productId', 'size', 'quantity', 'price'],
+        required: ['productId'],
         properties: {
-          sessionId: { type: 'string' },
-          productId: { type: 'string' },
+          productId: { type: 'string', format: 'uuid' },
+          quantity: { type: 'number', minimum: 1 },
           size: { type: 'string' },
-          quantity: { type: 'number', minimum: 1, maximum: 10 },
-          price: { type: 'number' }
-        }
-      },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            success: { type: 'boolean' },
-            cart: { type: 'object' }
-          }
+          color: { type: 'string' }
         }
       }
     }
   }, async (request, reply) => {
-    const data = addToCartSchema.parse(request.body)
-    const cart = getCart(data.sessionId)
-
-    // Check if item already exists in cart
-    const existingItemIndex = cart.items.findIndex(
-      item => item.productId === data.productId && item.size === data.size
-    )
-
-    if (existingItemIndex >= 0) {
-      // Update quantity of existing item
-      cart.items[existingItemIndex].quantity += data.quantity
-      cart.items[existingItemIndex].updatedAt = new Date().toISOString()
-    } else {
-      // Add new item to cart
-      cart.items.push({
-        id: `${data.productId}-${data.size}-${Date.now()}`,
-        productId: data.productId,
-        size: data.size,
-        quantity: data.quantity,
-        price: data.price,
-        addedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      })
-    }
-
-    cart.updatedAt = new Date().toISOString()
-
-    return {
-      success: true,
-      cart
-    }
-  })
-
-    // Get cart items
-  fastify.get('/cart/:sessionId', {
-    schema: {
-      tags: ['cart'],
-      summary: 'Get cart items',
-      params: {
-        type: 'object',
-        properties: {
-          sessionId: { type: 'string' }
-        },
-        required: ['sessionId']
-      },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            items: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  productId: { type: 'string' },
-                  name: { type: 'string' },
-                  price: { type: 'number' },
-                  size: { type: 'string' },
-                  quantity: { type: 'number' },
-                  image: { type: 'string' },
-                  total: { type: 'number' }
-                }
-              }
-            },
-            totalItems: { type: 'number' },
-            totalAmount: { type: 'number' }
-          }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const { sessionId } = request.params
-    
     try {
-      let cartItems = []
-      
-      if (useSupabase) {
-        // Get cart items from Supabase with product details
+      const { productId, quantity, size, color } = addToCartSchema.parse(request.body)
+      const cart = await getActiveCart(request)
+
+      // Check existing item
+      let query = supabaseAdmin
+        .from(TABLES.CART_ITEMS)
+        .select('id, quantity')
+        .eq('cart_id', cart.id)
+        .eq('product_id', productId)
+
+      if (size) query = query.eq('size', size)
+      else query = query.is('size', null)
+
+      if (color) query = query.eq('color', color)
+      else query = query.is('color', null)
+
+      const { data: existingItem } = await query.single()
+
+      let result
+      if (existingItem) {
+        // Update quantity
         const { data, error } = await supabaseAdmin
           .from(TABLES.CART_ITEMS)
-          .select(`
-            id,
-            product_id,
-            size,
-            quantity,
-            price,
-            products:product_id (
-              name,
-              images
-            )
-          `)
-          .eq('session_id', sessionId)
-        
+          .update({ quantity: existingItem.quantity + quantity })
+          .eq('id', existingItem.id)
+          .select()
+          .single()
         if (error) throw error
-        
-        cartItems = data.map(item => ({
-          id: item.id,
-          productId: item.product_id,
-          name: item.products?.name || 'Unknown Product',
-          price: item.price,
-          size: item.size,
-          quantity: item.quantity,
-          image: item.products?.images?.[0] || '/api/placeholder/400/400',
-          total: item.price * item.quantity
-        }))
+        result = data
       } else {
-        cartItems = memoryCart.get(sessionId) || []
+        // Insert new item
+        const { data, error } = await supabaseAdmin
+          .from(TABLES.CART_ITEMS)
+          .insert({
+            cart_id: cart.id,
+            product_id: productId,
+            quantity: quantity,
+            size: size || null,
+            color: color || null
+          })
+          .select()
+          .single()
+        if (error) throw error
+        result = data
       }
-      
-      const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0)
-      const totalAmount = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-      
+
       return {
-        items: cartItems,
-        totalItems,
-        totalAmount
+        success: true,
+        item: result
       }
     } catch (error) {
-      reply.code(500).send({
-        error: 'Failed to fetch cart',
-        message: error.message
+       if (error.status === 400) return reply.status(400).send(error)
+       console.error('Add to cart error:', error)
+       if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          error: 'Validation Error',
+          message: 'Invalid input data',
+          details: error.errors
+        })
+      }
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to add item to cart'
       })
     }
   })
 
-  // PUT /api/cart/:sessionId/item/:itemId - Update cart item quantity
-  fastify.put('/cart/:sessionId/item/:itemId', {
+  // GET /cart
+  fastify.get('/cart', {
+    preHandler: [fastify.authenticateOptional],
     schema: {
       tags: ['Cart'],
-      description: 'Update cart item quantity',
-      params: {
-        type: 'object',
-        properties: {
-          sessionId: { type: 'string' },
-          itemId: { type: 'string' }
-        }
-      },
-      body: {
-        type: 'object',
-        required: ['quantity'],
-        properties: {
-          quantity: { type: 'number', minimum: 0, maximum: 10 }
-        }
-      }
+      description: 'Get current cart'
     }
   }, async (request, reply) => {
-    const { sessionId, itemId } = request.params
-    const { quantity } = updateCartItemSchema.parse(request.body)
+    try {
+      const cart = await getActiveCart(request)
 
-    const cart = getCart(sessionId)
-    const itemIndex = cart.items.findIndex(item => item.id === itemId)
+      const { data: items, error } = await supabaseAdmin
+        .from(TABLES.CART_ITEMS)
+        .select(`
+          id,
+          quantity,
+          size,
+          color,
+          product:products (
+            id,
+            name,
+            price,
+            image_url,
+            slug
+          )
+        `)
+        .eq('cart_id', cart.id)
 
-    if (itemIndex === -1) {
-      return reply.status(404).send({
-        error: 'Item Not Found',
-        message: `Cart item with ID '${itemId}' not found`
-      })
-    }
+      if (error) throw error
 
-    if (quantity === 0) {
-      // Remove item if quantity is 0
-      cart.items.splice(itemIndex, 1)
-    } else {
-      // Update quantity
-      cart.items[itemIndex].quantity = quantity
-      cart.items[itemIndex].updatedAt = new Date().toISOString()
-    }
+      // Calculate totals
+      const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
+      const subtotal = items.reduce((sum, item) => sum + (item.quantity * (item.product?.price || 0)), 0)
 
-    cart.updatedAt = new Date().toISOString()
+      return {
+        id: cart.id,
+        items: items.map(item => ({
+          id: item.id,
+          quantity: item.quantity,
+          size: item.size,
+          color: item.color,
+          product: item.product,
+          total: item.quantity * (item.product?.price || 0)
+        })),
+        summary: {
+          totalItems,
+          subtotal
+        }
+      }
 
-    const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0)
-    const totalValue = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-
-    return {
-      success: true,
-      cart,
-      totalItems,
-      totalValue
+    } catch (error) {
+      if (error.status === 400) {
+         return { items: [], summary: { totalItems: 0, subtotal: 0 } }
+      }
+      console.error('Get cart error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error' })
     }
   })
 
-  // DELETE /api/cart/:sessionId/item/:itemId - Remove item from cart
-  fastify.delete('/cart/:sessionId/item/:itemId', {
+  // DELETE /cart/item/:id
+  fastify.delete('/cart/item/:id', {
+    preHandler: [fastify.authenticateOptional],
     schema: {
       tags: ['Cart'],
       description: 'Remove item from cart',
       params: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
-          itemId: { type: 'string' }
+          id: { type: 'string' }
         }
       }
     }
   }, async (request, reply) => {
-    const { sessionId, itemId } = request.params
-    const cart = getCart(sessionId)
+    try {
+      const { id } = request.params
+      const cart = await getActiveCart(request)
 
-    const itemIndex = cart.items.findIndex(item => item.id === itemId)
-    if (itemIndex === -1) {
-      return reply.status(404).send({
-        error: 'Item Not Found',
-        message: `Cart item with ID '${itemId}' not found`
-      })
-    }
+      const { error } = await supabaseAdmin
+        .from(TABLES.CART_ITEMS)
+        .delete()
+        .eq('id', id)
+        .eq('cart_id', cart.id) // Ensure ownership
 
-    cart.items.splice(itemIndex, 1)
-    cart.updatedAt = new Date().toISOString()
+      if (error) throw error
 
-    return {
-      success: true,
-      message: 'Item removed from cart',
-      cart
-    }
-  })
-
-  // DELETE /api/cart/:sessionId - Clear entire cart
-  fastify.delete('/cart/:sessionId', {
-    schema: {
-      tags: ['Cart'],
-      description: 'Clear entire cart',
-      params: {
-        type: 'object',
-        properties: {
-          sessionId: { type: 'string' }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const { sessionId } = request.params
-    
-    if (carts.has(sessionId)) {
-      carts.delete(sessionId)
-    }
-
-    return {
-      success: true,
-      message: 'Cart cleared successfully'
-    }
-  })
-
-  // GET /api/cart/:sessionId/summary - Get cart summary
-  fastify.get('/cart/:sessionId/summary', {
-    schema: {
-      tags: ['Cart'],
-      description: 'Get cart summary with totals',
-      params: {
-        type: 'object',
-        properties: {
-          sessionId: { type: 'string' }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const { sessionId } = request.params
-    const cart = getCart(sessionId)
-
-    const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0)
-    const subtotal = cart.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-    const shipping = subtotal >= 2000 ? 0 : 150 // Free shipping over ₹2000
-    const tax = Math.round(subtotal * 0.18) // 18% GST
-    const total = subtotal + shipping + tax
-
-    return {
-      sessionId,
-      totalItems,
-      subtotal,
-      shipping,
-      tax,
-      total,
-      freeShippingEligible: subtotal >= 2000,
-      freeShippingRemaining: subtotal < 2000 ? 2000 - subtotal : 0
+      return { success: true, message: 'Item removed' }
+    } catch (error) {
+      console.error('Delete cart item error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error' })
     }
   })
 }

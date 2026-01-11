@@ -1,281 +1,179 @@
 import fp from 'fastify-plugin'
+import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
 
 async function orderRoutes(fastify, options) {
   const { z } = await import('zod')
 
-  // In-memory orders storage (in production, use database)
-  const orders = new Map()
-
-  // Validation schemas
-  const createOrderSchema = z.object({
-    sessionId: z.string(),
-    customerInfo: z.object({
-      firstName: z.string().min(1),
-      lastName: z.string().min(1),
-      email: z.string().email(),
-      phone: z.string().min(10),
-    }),
-    shippingAddress: z.object({
-      street: z.string().min(1),
-      city: z.string().min(1),
-      state: z.string().min(1),
-      postalCode: z.string().min(6),
-      country: z.string().default('India')
-    }),
-    billingAddress: z.object({
-      street: z.string().min(1),
-      city: z.string().min(1),
-      state: z.string().min(1),
-      postalCode: z.string().min(6),
-      country: z.string().default('India')
-    }).optional(),
-    items: z.array(z.object({
-      productId: z.string(),
-      size: z.string(),
-      quantity: z.number().min(1),
-      price: z.number()
-    })),
-    totals: z.object({
-      subtotal: z.number(),
-      shipping: z.number(),
-      tax: z.number(),
-      total: z.number()
-    })
-  })
-
-  // Helper function to generate order ID
-  const generateOrderId = () => {
-    const timestamp = Date.now().toString(36)
-    const random = Math.random().toString(36).substr(2, 5)
-    return `AN${timestamp}${random}`.toUpperCase()
+  // Helper to get owner params
+  const getOwnerParams = (request) => {
+    const userId = request.user?.sub
+    const guestId = request.cookies.guest_id
+    if (!userId && !guestId) {
+       throw { status: 401, message: 'Unauthorized' }
+    }
+    return { userId, guestId }
   }
 
-  // POST /api/orders - Create new order
-  fastify.post('/orders', {
+  // GET /orders - List all orders
+  fastify.get('/orders', {
+    preHandler: [fastify.authenticateOptional],
     schema: {
       tags: ['Orders'],
-      description: 'Create a new order',
-      body: {
-        type: 'object',
-        required: ['sessionId', 'customerInfo', 'shippingAddress', 'items', 'totals'],
-        properties: {
-          sessionId: { type: 'string' },
-          customerInfo: {
-            type: 'object',
-            required: ['firstName', 'lastName', 'email', 'phone'],
-            properties: {
-              firstName: { type: 'string' },
-              lastName: { type: 'string' },
-              email: { type: 'string', format: 'email' },
-              phone: { type: 'string' }
-            }
-          },
-          shippingAddress: {
-            type: 'object',
-            required: ['street', 'city', 'state', 'postalCode'],
-            properties: {
-              street: { type: 'string' },
-              city: { type: 'string' },
-              state: { type: 'string' },
-              postalCode: { type: 'string' },
-              country: { type: 'string', default: 'India' }
-            }
-          },
-          billingAddress: {
-            type: 'object',
-            properties: {
-              street: { type: 'string' },
-              city: { type: 'string' },
-              state: { type: 'string' },
-              postalCode: { type: 'string' },
-              country: { type: 'string' }
-            }
-          },
-          items: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['productId', 'size', 'quantity', 'price'],
-              properties: {
-                productId: { type: 'string' },
-                size: { type: 'string' },
-                quantity: { type: 'number' },
-                price: { type: 'number' }
-              }
-            }
-          },
-          totals: {
-            type: 'object',
-            required: ['subtotal', 'shipping', 'tax', 'total'],
-            properties: {
-              subtotal: { type: 'number' },
-              shipping: { type: 'number' },
-              tax: { type: 'number' },
-              total: { type: 'number' }
-            }
-          }
-        }
-      },
+      description: 'Get all orders for the current user or guest',
       response: {
-        201: {
+        200: {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            order: { type: 'object' }
+            orders: { type: 'array' }
           }
         }
       }
     }
   }, async (request, reply) => {
-    const orderData = createOrderSchema.parse(request.body)
-    
-    const orderId = generateOrderId()
-    const order = {
-      id: orderId,
-      ...orderData,
-      status: 'pending',
-      paymentStatus: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days from now
-    }
+    try {
+      const { userId, guestId } = getOwnerParams(request)
 
-    orders.set(orderId, order)
+      let query = supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select(`
+          *,
+          address:addresses(*),
+          items:order_items(
+            *,
+            product:products(*)
+          )
+        `)
+        .order('created_at', { ascending: false })
 
-    reply.status(201)
-    return {
-      success: true,
-      order
+      if (userId) query = query.eq('user_id', userId)
+      else query = query.eq('guest_id', guestId)
+
+      const { data: orders, error } = await query
+
+      if (error) return handleSupabaseError(error, reply)
+
+      return {
+        success: true,
+        orders: orders || []
+      }
+
+    } catch (error) {
+      if (error.status === 401) return reply.status(401).send(error)
+      console.error('Get orders error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error' })
     }
   })
 
-  // GET /api/orders/:id - Get order by ID
-  fastify.get('/orders/:id', {
+  // POST /orders/track - Track order by Email and Phone (Public)
+  fastify.post('/orders/track', {
     schema: {
       tags: ['Orders'],
-      description: 'Get order by ID',
-      params: {
+      description: 'Track guest orders using Email and Phone',
+      body: {
         type: 'object',
+        required: ['email', 'phone'],
         properties: {
-          id: { type: 'string' }
+          email: { type: 'string', format: 'email' },
+          phone: { type: 'string' }
         }
       },
       response: {
-        200: { type: 'object' },
-        404: {
+        200: {
           type: 'object',
           properties: {
-            error: { type: 'string' },
-            message: { type: 'string' }
+            success: { type: 'boolean' },
+            orders: { type: 'array' }
           }
         }
       }
     }
   }, async (request, reply) => {
-    const { id } = request.params
-    const order = orders.get(id)
+    try {
+      const { email, phone } = request.body
 
-    if (!order) {
-      return reply.status(404).send({
-        error: 'Order Not Found',
-        message: `Order with ID '${id}' not found`
-      })
+      // Find orders where guest_email matches AND the associated address has the matching phone
+      // We use !inner on address to ensure the filter applies
+      const { data: orders, error } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select(`
+          *,
+          address:addresses!inner(*),
+          items:order_items(
+            *,
+            product:products(*)
+          )
+        `)
+        .eq('guest_email', email)
+        .eq('address.phone', phone)
+        .order('created_at', { ascending: false })
+
+      if (error) return handleSupabaseError(error, reply)
+
+      return {
+        success: true,
+        orders: orders || []
+      }
+
+    } catch (error) {
+      console.error('Track order error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error' })
     }
-
-    return order
   })
 
-  // PUT /api/orders/:id/status - Update order status
-  fastify.put('/orders/:id/status', {
+  // GET /orders/:id - Get single order details
+  fastify.get('/orders/:id', {
+    preHandler: [fastify.authenticateOptional],
     schema: {
       tags: ['Orders'],
-      description: 'Update order status',
+      description: 'Get details of a specific order',
       params: {
         type: 'object',
         properties: {
-          id: { type: 'string' }
-        }
-      },
-      body: {
-        type: 'object',
-        required: ['status'],
-        properties: {
-          status: { 
-            type: 'string', 
-            enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled']
-          }
+          id: { type: 'string', format: 'uuid' }
         }
       }
     }
   }, async (request, reply) => {
-    const { id } = request.params
-    const { status } = request.body
+    try {
+      const { id } = request.params
+      const { userId, guestId } = getOwnerParams(request)
 
-    const order = orders.get(id)
-    if (!order) {
-      return reply.status(404).send({
-        error: 'Order Not Found',
-        message: `Order with ID '${id}' not found`
-      })
-    }
+      let query = supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select(`
+          *,
+          address:addresses(*),
+          items:order_items(
+            *,
+            product:products(*)
+          )
+        `)
+        .eq('id', id)
+        .single()
 
-    order.status = status
-    order.updatedAt = new Date().toISOString()
+      // Security check: We can't easily add OR condition to the single query securely with RLS bypassed
+      // So we fetch first, then verify ownership
+      const { data: order, error } = await query
 
-    // Update payment status if order is confirmed
-    if (status === 'confirmed') {
-      order.paymentStatus = 'paid'
-    }
+      if (error) return handleSupabaseError(error, reply)
+      if (!order) return reply.status(404).send({ error: 'Order not found' })
 
-    orders.set(id, order)
-
-    return {
-      success: true,
-      order
-    }
-  })
-
-  // GET /api/orders - Get all orders (for admin)
-  fastify.get('/orders', {
-    schema: {
-      tags: ['Orders'],
-      description: 'Get all orders with optional filtering',
-      querystring: {
-        type: 'object',
-        properties: {
-          status: { type: 'string' },
-          paymentStatus: { type: 'string' },
-          limit: { type: 'number', default: 50 },
-          offset: { type: 'number', default: 0 }
-        }
+      // Verify ownership
+      const isOwner = (userId && order.user_id === userId) || (guestId && order.guest_id === guestId)
+      if (!isOwner) {
+        return reply.status(403).send({ error: 'Forbidden', message: 'You do not have access to this order' })
       }
-    }
-  }, async (request, reply) => {
-    const { status, paymentStatus, limit = 50, offset = 0 } = request.query
-    
-    let allOrders = Array.from(orders.values())
 
-    // Apply filters
-    if (status) {
-      allOrders = allOrders.filter(order => order.status === status)
-    }
+      return {
+        success: true,
+        order
+      }
 
-    if (paymentStatus) {
-      allOrders = allOrders.filter(order => order.paymentStatus === paymentStatus)
-    }
-
-    // Sort by creation date (newest first)
-    allOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-
-    // Apply pagination
-    const total = allOrders.length
-    const paginatedOrders = allOrders.slice(offset, offset + limit)
-
-    return {
-      orders: paginatedOrders,
-      total,
-      offset,
-      limit
+    } catch (error) {
+      if (error.status === 401) return reply.status(401).send(error)
+      console.error('Get order details error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error' })
     }
   })
 }

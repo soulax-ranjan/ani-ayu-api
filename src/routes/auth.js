@@ -1,35 +1,109 @@
 import fp from 'fastify-plugin'
-import { supabase, supabaseAdmin, handleSupabaseError } from '../lib/supabase.js'
+import crypto from 'node:crypto'
+import bcrypt from 'bcrypt'
+import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
 
 async function authRoutes(fastify, options) {
   const { z } = await import('zod')
 
   // Validation schemas
-  const signUpSchema = z.object({
+  const registerSchema = z.object({
     email: z.string().email(),
     password: z.string().min(6),
-    firstName: z.string().min(1),
-    lastName: z.string().min(1),
+    firstName: z.string().min(1).optional(),
+    lastName: z.string().min(1).optional(),
     phone: z.string().optional()
   })
 
-  const signInSchema = z.object({
+  const loginSchema = z.object({
     email: z.string().email(),
     password: z.string().min(1)
   })
 
-  const resetPasswordSchema = z.object({
-    email: z.string().email()
-  })
+  // Helper to merge carts
+  const mergeCarts = async (userId, guestId) => {
+    if (!guestId) return
 
-  // POST /api/auth/signup - Register new user
-  fastify.post('/auth/signup', {
+    // Get guest cart
+    const { data: guestCart } = await supabaseAdmin
+      .from(TABLES.CARTS)
+      .select('id, cart_items(*)')
+      .eq('guest_id', guestId)
+      .single()
+
+    if (!guestCart) return
+
+    // Get or create user cart
+    let { data: userCart } = await supabaseAdmin
+      .from(TABLES.CARTS)
+      .select('id')
+      .eq('user_id', userId)
+      .single()
+
+    if (!userCart) {
+      const { data: newCart } = await supabaseAdmin
+        .from(TABLES.CARTS)
+        .insert({ user_id: userId })
+        .select()
+        .single()
+      userCart = newCart
+    }
+
+    // Merge items
+    if (guestCart.cart_items && guestCart.cart_items.length > 0) {
+      for (const item of guestCart.cart_items) {
+        let query = supabaseAdmin
+          .from(TABLES.CART_ITEMS)
+          .select('id, quantity')
+          .eq('cart_id', userCart.id)
+          .eq('product_id', item.product_id)
+
+        if (item.size) query = query.eq('size', item.size)
+        else query = query.is('size', null)
+
+        if (item.color) query = query.eq('color', item.color)
+        else query = query.is('color', null)
+
+        const { data: existingItem } = await query.single()
+
+        if (existingItem) {
+          // Keep higher quantity rule
+          if (item.quantity > existingItem.quantity) {
+            await supabaseAdmin
+              .from(TABLES.CART_ITEMS)
+              .update({ quantity: item.quantity })
+              .eq('id', existingItem.id)
+          }
+        } else {
+          // Add missing item
+          await supabaseAdmin
+            .from(TABLES.CART_ITEMS)
+            .insert({
+              cart_id: userCart.id,
+              product_id: item.product_id,
+              quantity: item.quantity,
+              size: item.size,
+              color: item.color
+            })
+        }
+      }
+    }
+
+    // Delete guest cart
+    await supabaseAdmin
+      .from(TABLES.CARTS)
+      .delete()
+      .eq('id', guestCart.id)
+  }
+
+  // POST /auth/register
+  fastify.post('/auth/register', {
     schema: {
       tags: ['Authentication'],
-      description: 'Register a new user account',
+      description: 'Register a new user',
       body: {
         type: 'object',
-        required: ['email', 'password', 'firstName', 'lastName'],
+        required: ['email', 'password'],
         properties: {
           email: { type: 'string', format: 'email' },
           password: { type: 'string', minLength: 6 },
@@ -37,66 +111,80 @@ async function authRoutes(fastify, options) {
           lastName: { type: 'string' },
           phone: { type: 'string' }
         }
-      },
-      response: {
-        201: {
-          type: 'object',
-          properties: {
-            success: { type: 'boolean' },
-            user: { type: 'object' },
-            session: { type: 'object' }
-          }
-        },
-        400: {
-          type: 'object',
-          properties: {
-            error: { type: 'string' },
-            message: { type: 'string' }
-          }
-        }
       }
     }
   }, async (request, reply) => {
     try {
-      const userData = signUpSchema.parse(request.body)
+      const { email, password, firstName, lastName, phone } = registerSchema.parse(request.body)
 
-      const { data, error } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          data: {
-            first_name: userData.firstName,
-            last_name: userData.lastName,
-            phone: userData.phone
-          }
-        }
-      })
+      // Hash password
+      const passwordHash = await bcrypt.hash(password, 10)
+
+      // Create user
+      const { data: user, error } = await supabaseAdmin
+        .from(TABLES.USERS)
+        .insert({
+          email,
+          password_hash: passwordHash,
+          first_name: firstName,
+          last_name: lastName,
+          phone
+        })
+        .select()
+        .single()
 
       if (error) {
-        const supabaseError = handleSupabaseError(error)
-        return reply.status(400).send(supabaseError)
+        if (error.code === '23505') { // Unique violation
+          return reply.status(409).send({
+            error: 'Conflict',
+            message: 'Email already registered'
+          })
+        }
+        return handleSupabaseError(error, reply)
       }
 
-      reply.status(201)
+      // Merge guest cart if exists
+      const guestId = request.cookies.guest_id
+      if (guestId) {
+        await mergeCarts(user.id, guestId)
+        reply.clearCookie('guest_id')
+      }
+
+      // Generate JWT
+      const token = fastify.jwt.sign({ sub: user.id, email: user.email, role: user.role })
+
       return {
         success: true,
-        user: data.user,
-        session: data.session,
-        message: 'Account created successfully. Please check your email for verification.'
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role
+        }
       }
-    } catch (validationError) {
-      return reply.status(400).send({
-        error: 'Validation Error',
-        message: validationError.message
+
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          error: 'Validation Error',
+          message: 'Invalid input data',
+          details: error.errors
+        })
+      }
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Registration failed'
       })
     }
   })
 
-  // POST /api/auth/signin - Sign in user
-  fastify.post('/auth/signin', {
+  // POST /auth/login
+  fastify.post('/auth/login', {
     schema: {
       tags: ['Authentication'],
-      description: 'Sign in user with email and password',
+      description: 'Login user',
       body: {
         type: 'object',
         required: ['email', 'password'],
@@ -104,218 +192,106 @@ async function authRoutes(fastify, options) {
           email: { type: 'string', format: 'email' },
           password: { type: 'string' }
         }
-      },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            success: { type: 'boolean' },
-            user: { type: 'object' },
-            session: { type: 'object' }
-          }
-        }
       }
     }
   }, async (request, reply) => {
     try {
-      const credentials = signInSchema.parse(request.body)
+      const { email, password } = loginSchema.parse(request.body)
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: credentials.email,
-        password: credentials.password
-      })
+      // Get user
+      const { data: user, error } = await supabaseAdmin
+        .from(TABLES.USERS)
+        .select('*')
+        .eq('email', email)
+        .single()
 
-      if (error) {
-        const supabaseError = handleSupabaseError(error)
-        return reply.status(401).send(supabaseError)
+      if (error || !user) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Invalid email or password'
+        })
       }
+
+      // Verify password
+      const validPassword = await bcrypt.compare(password, user.password_hash)
+      if (!validPassword) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Invalid email or password'
+        })
+      }
+
+      // Merge guest cart if exists
+      const guestId = request.cookies.guest_id
+      if (guestId) {
+        await mergeCarts(user.id, guestId)
+        reply.clearCookie('guest_id')
+      }
+
+      // Generate JWT
+      const token = fastify.jwt.sign({ sub: user.id, email: user.email, role: user.role })
 
       return {
         success: true,
-        user: data.user,
-        session: data.session
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role
+        }
       }
-    } catch (validationError) {
-      return reply.status(400).send({
-        error: 'Validation Error',
-        message: validationError.message
+    } catch (error) {
+       if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          error: 'Validation Error',
+          message: 'Invalid input data',
+          details: error.errors
+        })
+      }
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Login failed'
       })
     }
   })
 
-  // POST /api/auth/signout - Sign out user
-  fastify.post('/auth/signout', {
-    preHandler: [fastify.authenticate],
+  // POST /guest/session
+  fastify.post('/guest/session', {
     schema: {
-      tags: ['Authentication'],
-      description: 'Sign out current user',
-      security: [{ bearerAuth: [] }]
+      tags: ['Guest'],
+      description: 'Start a guest session'
     }
   }, async (request, reply) => {
-    const { error } = await supabase.auth.signOut()
-
-    if (error) {
-      const supabaseError = handleSupabaseError(error)
-      return reply.status(400).send(supabaseError)
-    }
-
-    return {
-      success: true,
-      message: 'Signed out successfully'
-    }
-  })
-
-  // POST /api/auth/refresh - Refresh session
-  fastify.post('/auth/refresh', {
-    schema: {
-      tags: ['Authentication'],
-      description: 'Refresh user session',
-      body: {
-        type: 'object',
-        required: ['refresh_token'],
-        properties: {
-          refresh_token: { type: 'string' }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const { refresh_token } = request.body
-
-    const { data, error } = await supabase.auth.refreshSession({
-      refresh_token
+    // Logic handled by middleware if used, or explicitly here
+    // But since we want to be explicit as per request
+    const guestId = crypto.randomUUID()
+    
+    reply.setCookie('guest_id', guestId, {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60 * 24 * 30 // 30 days
     })
 
-    if (error) {
-      const supabaseError = handleSupabaseError(error)
-      return reply.status(401).send(supabaseError)
-    }
-
     return {
       success: true,
-      session: data.session
+      guestId
     }
   })
 
-  // POST /api/auth/reset-password - Send password reset email
-  fastify.post('/auth/reset-password', {
+  // POST /auth/logout
+  fastify.post('/auth/logout', {
     schema: {
       tags: ['Authentication'],
-      description: 'Send password reset email',
-      body: {
-        type: 'object',
-        required: ['email'],
-        properties: {
-          email: { type: 'string', format: 'email' }
-        }
-      }
+      description: 'Logout user'
     }
   }, async (request, reply) => {
-    try {
-      const { email } = resetPasswordSchema.parse(request.body)
-
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${process.env.FRONTEND_URL}/reset-password`
-      })
-
-      if (error) {
-        const supabaseError = handleSupabaseError(error)
-        return reply.status(400).send(supabaseError)
-      }
-
-      return {
-        success: true,
-        message: 'Password reset email sent'
-      }
-    } catch (validationError) {
-      return reply.status(400).send({
-        error: 'Validation Error',
-        message: validationError.message
-      })
-    }
-  })
-
-  // POST /api/auth/update-password - Update user password
-  fastify.post('/auth/update-password', {
-    preHandler: [fastify.authenticate],
-    schema: {
-      tags: ['Authentication'],
-      description: 'Update user password',
-      security: [{ bearerAuth: [] }],
-      body: {
-        type: 'object',
-        required: ['password'],
-        properties: {
-          password: { type: 'string', minLength: 6 }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const { password } = request.body
-
-    const { error } = await supabase.auth.updateUser({
-      password: password
-    })
-
-    if (error) {
-      const supabaseError = handleSupabaseError(error)
-      return reply.status(400).send(supabaseError)
-    }
-
+    reply.clearCookie('guest_id')
     return {
       success: true,
-      message: 'Password updated successfully'
-    }
-  })
-
-  // GET /api/auth/user - Get current user
-  fastify.get('/auth/user', {
-    preHandler: [fastify.authenticate],
-    schema: {
-      tags: ['Authentication'],
-      description: 'Get current authenticated user',
-      security: [{ bearerAuth: [] }]
-    }
-  }, async (request, reply) => {
-    return {
-      user: request.user
-    }
-  })
-
-  // PUT /api/auth/user - Update user profile
-  fastify.put('/auth/user', {
-    preHandler: [fastify.authenticate],
-    schema: {
-      tags: ['Authentication'],
-      description: 'Update user profile',
-      security: [{ bearerAuth: [] }],
-      body: {
-        type: 'object',
-        properties: {
-          firstName: { type: 'string' },
-          lastName: { type: 'string' },
-          phone: { type: 'string' }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const updates = request.body
-
-    const { data, error } = await supabase.auth.updateUser({
-      data: {
-        first_name: updates.firstName,
-        last_name: updates.lastName,
-        phone: updates.phone
-      }
-    })
-
-    if (error) {
-      const supabaseError = handleSupabaseError(error)
-      return reply.status(400).send(supabaseError)
-    }
-
-    return {
-      success: true,
-      user: data.user
+      message: 'Logged out successfully'
     }
   })
 }

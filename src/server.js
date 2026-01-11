@@ -53,6 +53,13 @@ fastify.decorate('authenticateOptional', async function (request, reply) {
   }
 })
 
+// Register cookie for guest sessions
+await fastify.register(import('@fastify/cookie'), {
+  secret: process.env.COOKIE_SECRET || 'your-cookie-secret-should-be-long',
+  hook: 'onRequest',
+  parseOptions: {}
+})
+
 // Register CORS
 await fastify.register(cors, {
   origin: true, // Allow all origins
@@ -138,21 +145,25 @@ fastify.get('/api/test', async (request, reply) => {
 
 // Register route handlers
 console.log('🔄 Registering auth routes...')
-await fastify.register(authRoutes, { prefix: '/api' })
+await fastify.register(authRoutes)
 console.log('🔄 Registering products routes...')
-await fastify.register(productRoutes, { prefix: '/api' })
+await fastify.register(productRoutes)
 console.log('🔄 Registering cart routes...')
-await fastify.register(cartRoutes, { prefix: '/api' })
+await fastify.register(cartRoutes)
 console.log('🔄 Registering category routes...')
-await fastify.register(categoryRoutes, { prefix: '/api' })
+await fastify.register(categoryRoutes)
 console.log('🔄 Registering order routes...')
-await fastify.register(orderRoutes, { prefix: '/api' })
+await fastify.register(orderRoutes)
 console.log('🔄 Registering banners routes...')
-await fastify.register(bannersRoutes, { prefix: '/api' })
+await fastify.register(bannersRoutes)
 console.log('🔄 Registering homepage routes...')
-await fastify.register(homepageRoutes, { prefix: '/api' })
+await fastify.register(homepageRoutes)
 console.log('🔄 Registering upload routes...')
-await fastify.register(uploadRoutes, { prefix: '/api' })
+await fastify.register(uploadRoutes)
+console.log('🔄 Registering address routes...')
+await fastify.register(import('./routes/addresses.js'))
+console.log('🔄 Registering checkout routes...')
+await fastify.register(import('./routes/checkout.js'))
 console.log('✅ All routes registered successfully!')
 
 // Global error handler

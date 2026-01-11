@@ -55,10 +55,7 @@ fastify.decorate('authenticateOptional', async function (request, reply) {
 
 // Register CORS
 await fastify.register(cors, {
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    process.env.ADMIN_URL
-  ].filter(Boolean),
+  origin: true, // Allow all origins
   credentials: true
 })
 

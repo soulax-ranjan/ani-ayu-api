@@ -1,12 +1,29 @@
 import { supabase, supabaseAdmin } from '../lib/supabase.js'
 
 export default async function uploadRoutes(fastify, opts) {
-  // POST /api/upload/image - Upload single image to Supabase Storage
+  // Helper to determine bucket name
+  const getBucketName = (type) => {
+    switch (type) {
+      case 'banner':
+        return 'banners'
+      case 'product':
+      default:
+        return 'product-images'
+    }
+  }
+
+  // POST /upload/image - Upload single image to Supabase Storage
   fastify.post('/upload/image', {
     schema: {
       tags: ['Upload'],
       description: 'Upload image to Supabase Storage',
       consumes: ['multipart/form-data'],
+      querystring: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['product', 'banner'], default: 'product' }
+        }
+      },
       response: {
         200: {
           type: 'object',
@@ -27,6 +44,16 @@ export default async function uploadRoutes(fastify, opts) {
     }
   }, async (request, reply) => {
     try {
+      if (!request.isMultipart()) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Request must be multipart/form-data',
+          receivedContentType: request.headers['content-type'] || 'missing'
+        })
+      }
+
+      const bucketName = getBucketName(request.query.type)
+
       // Get the uploaded file
       const data = await request.file()
       
@@ -53,7 +80,7 @@ export default async function uploadRoutes(fastify, opts) {
       // duplex: 'half' is required for Node.js environments with node-fetch under the hood
       // Use supabaseAdmin to bypass RLS
       const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-        .from('product-images')
+        .from(bucketName)
         .upload(fileName, data.file, {
           contentType: data.mimetype,
           upsert: false,
@@ -70,7 +97,7 @@ export default async function uploadRoutes(fastify, opts) {
 
       // Get public URL
       const { data: urlData } = supabaseAdmin.storage
-        .from('product-images')
+        .from(bucketName)
         .getPublicUrl(fileName)
 
       return {
@@ -88,12 +115,18 @@ export default async function uploadRoutes(fastify, opts) {
     }
   })
 
-  // POST /api/upload/images - Upload multiple images
+  // POST /upload/images - Upload multiple images
   fastify.post('/upload/images', {
     schema: {
       tags: ['Upload'],
       description: 'Upload multiple images to Supabase Storage',
       consumes: ['multipart/form-data'],
+      querystring: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['product', 'banner'], default: 'product' }
+        }
+      },
       response: {
         200: {
           type: 'object',
@@ -115,6 +148,14 @@ export default async function uploadRoutes(fastify, opts) {
     }
   }, async (request, reply) => {
     try {
+      if (!request.isMultipart()) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Request must be multipart/form-data'
+        })
+      }
+
+      const bucketName = getBucketName(request.query.type)
       const uploadResults = []
       const parts = request.parts()
       
@@ -135,7 +176,7 @@ export default async function uploadRoutes(fastify, opts) {
             // Upload to Supabase Storage using stream
             // Use supabaseAdmin to bypass RLS
             const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-              .from('product-images')
+              .from(bucketName)
               .upload(fileName, part.file, {
                 contentType: part.mimetype,
                 upsert: false,
@@ -145,7 +186,7 @@ export default async function uploadRoutes(fastify, opts) {
             if (!uploadError) {
               // Get public URL
               const { data: urlData } = supabaseAdmin.storage
-                .from('product-images')
+                .from(bucketName)
                 .getPublicUrl(fileName)
 
               uploadResults.push({
@@ -182,7 +223,7 @@ export default async function uploadRoutes(fastify, opts) {
     }
   })
 
-  // DELETE /api/upload/:fileName - Delete image from Supabase Storage
+  // DELETE /upload/:fileName - Delete image from Supabase Storage
   fastify.delete('/upload/:fileName', {
     schema: {
       tags: ['Upload'],
@@ -191,6 +232,12 @@ export default async function uploadRoutes(fastify, opts) {
         type: 'object',
         properties: {
           fileName: { type: 'string' }
+        }
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['product', 'banner'], default: 'product' }
         }
       },
       response: {
@@ -206,9 +253,10 @@ export default async function uploadRoutes(fastify, opts) {
   }, async (request, reply) => {
     try {
       const { fileName } = request.params
+      const bucketName = getBucketName(request.query.type)
 
-      const { error } = await supabase.storage
-        .from('product-images')
+      const { error } = await supabaseAdmin.storage
+        .from(bucketName)
         .remove([fileName])
 
       if (error) {

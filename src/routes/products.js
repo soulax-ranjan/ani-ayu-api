@@ -69,7 +69,8 @@ async function productRoutes(fastify, options) {
           meta_description: { type: 'string' },
           meta_keywords: { type: 'string' },
           status: { type: 'string', enum: ['active', 'draft', 'archived'] },
-          customizable: { type: 'boolean' }
+          customizable: { type: 'boolean' },
+          section: { type: 'number', default: 0 }
         },
         required: ['name', 'price', 'category_id']
       }
@@ -113,7 +114,8 @@ async function productRoutes(fastify, options) {
         meta_description: z.string().optional(),
         meta_keywords: z.string().optional(),
         status: z.enum(['active', 'draft', 'archived']).default('active').optional(),
-        customizable: z.boolean().default(false).optional()
+        customizable: z.boolean().default(false).optional(),
+        section: z.number().int().min(0).default(0).optional()
       })
 
       const body = zBody.parse(request.body)
@@ -210,7 +212,8 @@ async function productRoutes(fastify, options) {
           meta_description: { type: 'string' },
           meta_keywords: { type: 'string' },
           status: { type: 'string', enum: ['active', 'draft', 'archived'] },
-          customizable: { type: 'boolean' }
+          customizable: { type: 'boolean' },
+          section: { type: 'number' }
         }
       }
     }
@@ -254,7 +257,8 @@ async function productRoutes(fastify, options) {
         meta_description: z.string().optional(),
         meta_keywords: z.string().optional(),
         status: z.enum(['active', 'draft', 'archived']).optional(),
-        customizable: z.boolean().optional()
+        customizable: z.boolean().optional(),
+        section: z.number().int().min(0).optional()
       })
 
       const body = zBody.parse(request.body)
@@ -400,7 +404,8 @@ async function productRoutes(fastify, options) {
         meta_description,
         meta_keywords,
         status,
-        customizable
+        customizable,
+        section
       `)
 
       // Apply filters to Supabase query
@@ -559,7 +564,8 @@ async function productRoutes(fastify, options) {
         meta_description,
         meta_keywords,
         status,
-        customizable
+        customizable,
+        section
       `)
       .eq('id', id)
       .single()

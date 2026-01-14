@@ -427,6 +427,54 @@ async function bannersRoutes(fastify, options) {
       return reply.status(500).send({ error: 'Internal Server Error', message: error.message })
     }
   })
+  // DELETE /banners/:id - Delete a banner
+  fastify.delete('/banners/:id', {
+    schema: {
+      tags: ['Banners'],
+      description: 'Delete a homepage banner',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params
+
+      const { error } = await supabaseAdmin
+        .from(TABLES.HOMEPAGE_BANNERS)
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        console.error('Error deleting banner:', error)
+        return reply.status(500).send({ 
+          error: 'Database error', 
+          message: error.message 
+        })
+      }
+
+      return {
+        success: true,
+        message: 'Banner deleted successfully'
+      }
+
+    } catch (error) {
+      console.error('Delete banner error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error', message: error.message })
+    }
+  })
 }
 
 // export default fp(bannersRoutes, {

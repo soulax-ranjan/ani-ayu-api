@@ -95,14 +95,38 @@ export default async function uploadRoutes(fastify, opts) {
         })
       }
 
-      // Get public URL
-      const { data: urlData } = supabaseAdmin.storage
-        .from(bucketName)
-        .getPublicUrl(fileName)
+      // Get URL (Public or Signed based on bucket)
+      let fileUrl
+      if (bucketName === 'banners') {
+        // Banners bucket is private, generate signed URL
+        const { data: signedData, error: signedError } = await supabaseAdmin.storage
+          .from(bucketName)
+          .createSignedUrl(fileName, 60 * 60 * 24 * 365) // 1 year validity
+
+        if (signedError) {
+           console.error('Signed URL generation error:', signedError)
+           fileUrl = null
+        } else {
+           fileUrl = signedData.signedUrl
+        }
+      } else {
+        // Public bucket
+        const { data: urlData } = supabaseAdmin.storage
+          .from(bucketName)
+          .getPublicUrl(fileName)
+        fileUrl = urlData.publicUrl
+      }
+
+      if (!fileUrl) {
+         return reply.status(500).send({
+           error: 'URL generation failed',
+           message: 'Could not generate URL for the uploaded file'
+         })
+      }
 
       return {
         success: true,
-        url: urlData.publicUrl,
+        url: fileUrl,
         fileName: fileName
       }
 
@@ -184,15 +208,27 @@ export default async function uploadRoutes(fastify, opts) {
               })
 
             if (!uploadError) {
-              // Get public URL
-              const { data: urlData } = supabaseAdmin.storage
-                .from(bucketName)
-                .getPublicUrl(fileName)
+              // Get URL (Public or Signed based on bucket)
+              let fileUrl
+              if (bucketName === 'banners') {
+                const { data: signedData, error: signedError } = await supabaseAdmin.storage
+                  .from(bucketName)
+                  .createSignedUrl(fileName, 60 * 60 * 24 * 365) // 1 year validity
+                
+                if (!signedError) fileUrl = signedData.signedUrl
+              } else {
+                const { data: urlData } = supabaseAdmin.storage
+                  .from(bucketName)
+                  .getPublicUrl(fileName)
+                fileUrl = urlData.publicUrl
+              }
 
-              uploadResults.push({
-                url: urlData.publicUrl,
-                fileName: fileName
-              })
+              if (fileUrl) {
+                uploadResults.push({
+                  url: fileUrl,
+                  fileName: fileName
+                })
+              }
             } else {
               console.error('File upload error:', uploadError)
             }

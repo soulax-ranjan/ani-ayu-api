@@ -81,11 +81,10 @@ curl -X POST http://localhost:3002/addresses \
 ```
 **Response:** Returns the created Address object. **Copy the `id` (UUID)**.
 
-### Step B: Place Order
-Guest finalizes the order using the Address ID from Step A.
+### Step B: Place Order (COD or Online)
+Guest initiates the order using the Address ID from Step A.
 
-**Selective Checkout (Optional):** You can pass `cartItemIds`: `["ITEM_UUID_1", "ITEM_UUID_2"]` to order only specific items from the cart. If omitted, all cart items are ordered.
-
+**Option 1: Cash on Delivery (COD)**
 ```bash
 curl -X POST http://localhost:3002/checkout \
   -b cookies.txt \
@@ -97,10 +96,46 @@ curl -X POST http://localhost:3002/checkout \
   -v
 ```
 
-**Success!** The API returns `{ success: true, orderId: "...", message: "Order placed successfully" }`.
-The Cart is now empty (or contains only unselected items).
+**Option 2: Online Payment (Razorpay)**
+```bash
+curl -X POST http://localhost:3002/checkout \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "addressId": "ADDRESS_UUID_FROM_STEP_A",
+    "paymentMethod": "card"
+  }' \
+  -v
+```
+**Response (Online):** Returns `{ success: true, orderId: "...", razorpayOrderId: "...", amount: ..., currency: "INR" }`.
 
-### Step C: Check Order Details
+---
+
+**🛑 FRONTEND ACTION REQUIRED HERE 🛑**
+1. Frontend receives `razorpayOrderId`.
+2. Frontend opens Razorpay Checkout Form (`new Razorpay({...})`).
+3. User pays successfully.
+4. Razorpay returns `razorpayPaymentId` and `razorpaySignature` to the frontend.
+
+---
+
+### Step C: Verify Payment (If Online)
+After successful payment on Razorpay, the frontend calls this API to confirm the transaction.
+
+```bash
+curl -X POST http://localhost:3002/payments/verify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "razorpayOrderId": "RAZORPAY_ORDER_ID_FROM_STEP_B",
+    "razorpayPaymentId": "pay_mock_123456",
+    "razorpaySignature": "mock_signature"
+  }' \
+  -v
+```
+**Success!** Order status updates to `processing` and payment status to `paid`.
+
+### Step D: Check Order Details
+Guest can view the order immediately.
 Guest can view the order immediately (while the session is active).
 
 ```bash
@@ -110,7 +145,7 @@ curl "http://localhost:3002/orders/ORDER_ID" \
   -v
 ```
 
-### Step D: Track Order (If Session Lost)
+### Step E: Track Order (If Session Lost)
 If the guest clears cookies or uses a different device, they can find their order using the **Email** and **Phone** they provided.
 
 ```bash

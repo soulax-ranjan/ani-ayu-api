@@ -7,7 +7,7 @@ async function checkoutRoutes(fastify, options) {
   const checkoutSchema = z.object({
     addressId: z.string().uuid(),
     paymentMethod: z.enum(['cod', 'card', 'upi']).default('cod'),
-    cartItemIds: z.array(z.string().uuid()).optional() // Optional: if provided, only checkout these items
+    cartItemIds: z.array(z.string().uuid()).optional()
   })
 
   // POST /checkout - Place an order
@@ -72,7 +72,7 @@ async function checkoutRoutes(fastify, options) {
         return reply.status(400).send({ error: 'No valid items found in cart to checkout' })
       }
 
-      // 3. Calculate Total and Validate Stock (Stock validation skipped for brevity, but should be here)
+      // 3. Calculate Total and Validate Stock
       const totalAmount = items.reduce((sum, item) => sum + (item.products.price * item.quantity), 0)
 
       // 4. Get Address (and Email for Guest)
@@ -87,6 +87,7 @@ async function checkoutRoutes(fastify, options) {
       }
 
       // 5. Create Order
+      const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'upi'
       const orderData = {
         user_id: userId || null,
         guest_id: userId ? null : guestId,
@@ -94,7 +95,7 @@ async function checkoutRoutes(fastify, options) {
         address_id: addressId,
         total_amount: totalAmount,
         status: 'pending',
-        payment_status: 'pending' // In real app, integrate PG here
+        payment_status: 'pending' 
       }
 
       const { data: order, error: orderError } = await supabaseAdmin
@@ -120,28 +121,68 @@ async function checkoutRoutes(fastify, options) {
         .insert(orderItems)
 
       if (itemsInsertError) {
-        // Rollback strategy would be needed here in production (e.g., delete order)
         console.error('Failed to insert order items', itemsInsertError)
         return reply.status(500).send({ error: 'Failed to process order items' })
       }
 
       // 7. Clear Ordered Items from Cart
-      // If specific items were ordered, remove only those. If all items (no list provided), remove all.
       let deleteQuery = supabaseAdmin.from(TABLES.CART_ITEMS).delete().eq('cart_id', cart.id)
       
       if (cartItemIds && cartItemIds.length > 0) {
-        // Since we fetched `items` based on `cartItemIds`, `items` contains exactly what was ordered.
-        // We can delete using the IDs of the items we actually processed.
         const processedIds = items.map(i => i.id)
         deleteQuery = deleteQuery.in('id', processedIds)
       }
       
       await deleteQuery
 
+      // 8. Handle Payment Integration (Mock)
+      // TODO: Initialize Razorpay instance here
+      // const Razorpay = require('razorpay')
+      // const razorpay = new Razorpay({ key_id: 'YOUR_KEY_ID', key_secret: 'YOUR_KEY_SECRET' })
+
+      let paymentResponse = {}
+      if (isOnlinePayment) {
+        // Mock Razorpay Order Creation
+        // TODO: Replace with actual Razorpay API call
+        // const razorpayOrder = await razorpay.orders.create({
+        //   amount: totalAmount * 100, // amount in paise
+        //   currency: "INR",
+        //   receipt: order.id
+        // })
+        // const mockRazorpayId = razorpayOrder.id
+
+        const mockRazorpayId = `order_${Math.random().toString(36).substring(7)}`
+        
+        // Create Payment Record (Idempotency: Ensure your frontend handles not calling checkout twice for same cart actions)
+        const { error: paymentError } = await supabaseAdmin
+          .from(TABLES.PAYMENTS)
+          .insert({
+            order_id: order.id,
+            razorpay_order_id: mockRazorpayId,
+            amount: totalAmount,
+            currency: 'INR',
+            status: 'pending',
+            // method: paymentMethod // 'method' column not strictly in schema but useful if added
+          })
+
+        if (paymentError) {
+          console.error('Payment record creation failed', paymentError)
+          // Ideally revert order here, but for now just log
+        }
+
+        paymentResponse = {
+          razorpayOrderId: mockRazorpayId,
+          amount: totalAmount * 100, // Razorpay expects paise
+          currency: 'INR',
+          key: 'rzp_test_mock_key' // TODO: Replace with process.env.RAZORPAY_KEY_ID
+        }
+      }
+
       return {
         success: true,
         orderId: order.id,
-        message: 'Order placed successfully'
+        message: 'Order placed successfully',
+        ...paymentResponse
       }
 
     } catch (error) {

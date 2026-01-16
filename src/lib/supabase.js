@@ -41,6 +41,7 @@ export const TABLES = {
   ADDRESSES: 'addresses',
   ORDERS: 'orders',
   ORDER_ITEMS: 'order_items',
+  PAYMENTS: 'payments',
   HOMEPAGE_BANNERS: 'homepage_banners',
   TESTIMONIALS: 'testimonials'
 }

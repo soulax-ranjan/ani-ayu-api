@@ -164,6 +164,8 @@ console.log('🔄 Registering address routes...')
 await fastify.register(import('./routes/addresses.js'))
 console.log('🔄 Registering checkout routes...')
 await fastify.register(import('./routes/checkout.js'))
+console.log('🔄 Registering payment routes...')
+await fastify.register(import('./routes/payments.js'))
 console.log('✅ All routes registered successfully!')
 
 // Global error handler

@@ -21,7 +21,7 @@ async function addressRoutes(fastify, options) {
   // Helper to get owner params
   const getOwnerParams = (request) => {
     const userId = request.user?.sub
-    const guestId = request.cookies.guest_id
+    const guestId = request.headers['x-guest-id']
     if (!userId && !guestId) {
        throw { status: 401, message: 'Unauthorized' }
     }

@@ -30,7 +30,7 @@ async function checkoutRoutes(fastify, options) {
     try {
       const { addressId, paymentMethod, cartItemIds } = checkoutSchema.parse(request.body)
       const userId = request.user?.sub
-      const guestId = request.cookies.guest_id
+      const guestId = request.headers['x-guest-id']
 
       if (!userId && !guestId) {
         return reply.status(400).send({ error: 'No session found' })

@@ -19,7 +19,7 @@ async function cartRoutes(fastify, options) {
   // Helper to get active cart
   const getActiveCart = async (request) => {
     const userId = request.user?.sub
-    const guestId = request.cookies.guest_id
+    const guestId = request.headers['x-guest-id']
 
     if (!userId && !guestId) {
       throw { status: 400, message: 'No session identifier' }

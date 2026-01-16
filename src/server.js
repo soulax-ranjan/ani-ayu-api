@@ -53,12 +53,8 @@ fastify.decorate('authenticateOptional', async function (request, reply) {
   }
 })
 
-// Register cookie for guest sessions
-await fastify.register(import('@fastify/cookie'), {
-  secret: process.env.COOKIE_SECRET || 'your-cookie-secret-should-be-long',
-  hook: 'onRequest',
-  parseOptions: {}
-})
+// Register cookie for guest sessions (Removed in favor of localStorage)
+// await fastify.register(import('@fastify/cookie'), { ... })
 
 // Register CORS
 await fastify.register(cors, {

@@ -268,12 +268,7 @@ async function authRoutes(fastify, options) {
     // But since we want to be explicit as per request
     const guestId = crypto.randomUUID()
     
-    reply.setCookie('guest_id', guestId, {
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 30 // 30 days
-    })
+    // reply.setCookie('guest_id', guestId, { ... }) // Removed for localStorage approach
 
     return {
       success: true,

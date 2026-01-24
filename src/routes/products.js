@@ -70,6 +70,8 @@ async function productRoutes(fastify, options) {
           meta_keywords: { type: 'string' },
           status: { type: 'string', enum: ['active', 'draft', 'archived'] },
           customizable: { type: 'boolean' },
+          suggested: { type: 'boolean' },
+          allProduct: { type: 'boolean' },
           section: { type: 'number', default: 0 }
         },
         required: ['name', 'price', 'category_id']
@@ -115,6 +117,8 @@ async function productRoutes(fastify, options) {
         meta_keywords: z.string().optional(),
         status: z.enum(['active', 'draft', 'archived']).default('active').optional(),
         customizable: z.boolean().default(false).optional(),
+        suggested: z.boolean().default(false).optional(),
+        allProduct: z.boolean().default(false).optional(),
         section: z.number().int().min(0).default(0).optional()
       })
 
@@ -213,6 +217,8 @@ async function productRoutes(fastify, options) {
           meta_keywords: { type: 'string' },
           status: { type: 'string', enum: ['active', 'draft', 'archived'] },
           customizable: { type: 'boolean' },
+          suggested: { type: 'boolean' },
+          allProduct: { type: 'boolean' },
           section: { type: 'number' }
         }
       }
@@ -258,6 +264,8 @@ async function productRoutes(fastify, options) {
         meta_keywords: z.string().optional(),
         status: z.enum(['active', 'draft', 'archived']).optional(),
         customizable: z.boolean().optional(),
+        suggested: z.boolean().optional(),
+        allProduct: z.boolean().optional(),
         section: z.number().int().min(0).optional()
       })
 
@@ -405,6 +413,8 @@ async function productRoutes(fastify, options) {
         meta_keywords,
         status,
         customizable,
+        suggested,
+        allProduct,
         section
       `)
 
@@ -565,6 +575,8 @@ async function productRoutes(fastify, options) {
         meta_keywords,
         status,
         customizable,
+        suggested,
+        allProduct,
         section
       `)
       .eq('id', id)

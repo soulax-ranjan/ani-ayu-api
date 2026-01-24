@@ -180,7 +180,7 @@ async function orderRoutes(fastify, options) {
   // GET /orders/all - Admin: List all orders (No auth for now)
   fastify.get('/orders/all', {
     schema: {
-      tags: ['Admin'],
+      tags: ['Orders'],
       description: 'Admin: List all orders with full details',
       querystring: {
         type: 'object',
@@ -239,7 +239,7 @@ async function orderRoutes(fastify, options) {
   // GET /orders/details/:id - Admin: Get single order details with payments
   fastify.get('/orders/details/:id', {
     schema: {
-      tags: ['Admin'],
+      tags: ['Orders'],
       description: 'Admin: Get details of a specific order including payments',
       params: {
         type: 'object',
@@ -283,7 +283,7 @@ async function orderRoutes(fastify, options) {
   // PUT /orders/:id/status - Admin: Update order status
   fastify.put('/orders/:id/status', {
     schema: {
-      tags: ['Admin'],
+      tags: ['Orders'],
       description: 'Admin: Update order status',
       params: {
         type: 'object',

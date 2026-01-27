@@ -40,7 +40,7 @@ async function checkoutRoutes(fastify, options) {
       let cartQuery = supabaseAdmin.from(TABLES.CARTS).select('id').single()
       if (userId) cartQuery = cartQuery.eq('user_id', userId)
       else cartQuery = cartQuery.eq('guest_id', guestId)
-      
+
       const { data: cart, error: cartError } = await cartQuery
       if (cartError || !cart) {
         return reply.status(400).send({ error: 'Cart is empty' })
@@ -95,7 +95,7 @@ async function checkoutRoutes(fastify, options) {
         address_id: addressId,
         total_amount: totalAmount,
         status: 'pending',
-        payment_status: 'pending' 
+        payment_status: 'pending'
       }
 
       const { data: order, error: orderError } = await supabaseAdmin
@@ -127,55 +127,44 @@ async function checkoutRoutes(fastify, options) {
 
       // 7. Clear Ordered Items from Cart
       let deleteQuery = supabaseAdmin.from(TABLES.CART_ITEMS).delete().eq('cart_id', cart.id)
-      
+
       if (cartItemIds && cartItemIds.length > 0) {
         const processedIds = items.map(i => i.id)
         deleteQuery = deleteQuery.in('id', processedIds)
       }
-      
+
       await deleteQuery
 
-      // 8. Handle Payment Integration (Mock)
-      // TODO: Initialize Razorpay instance here
-      // const Razorpay = require('razorpay')
-      // const razorpay = new Razorpay({ key_id: 'YOUR_KEY_ID', key_secret: 'YOUR_KEY_SECRET' })
-
+      // 8. Handle Payment Integration
       let paymentResponse = {}
+
+      // Update order with payment method
+      await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .update({ payment_method: paymentMethod })
+        .eq('id', order.id)
+
       if (isOnlinePayment) {
-        // Mock Razorpay Order Creation
-        // TODO: Replace with actual Razorpay API call
-        // const razorpayOrder = await razorpay.orders.create({
-        //   amount: totalAmount * 100, // amount in paise
-        //   currency: "INR",
-        //   receipt: order.id
-        // })
-        // const mockRazorpayId = razorpayOrder.id
-
-        const mockRazorpayId = `order_${Math.random().toString(36).substring(7)}`
-        
-        // Create Payment Record (Idempotency: Ensure your frontend handles not calling checkout twice for same cart actions)
-        const { error: paymentError } = await supabaseAdmin
-          .from(TABLES.PAYMENTS)
-          .insert({
-            order_id: order.id,
-            razorpay_order_id: mockRazorpayId,
-            amount: totalAmount,
-            currency: 'INR',
-            status: 'pending',
-            // method: paymentMethod // 'method' column not strictly in schema but useful if added
-          })
-
-        if (paymentError) {
-          console.error('Payment record creation failed', paymentError)
-          // Ideally revert order here, but for now just log
-        }
+        // For online payments, we need to create a Razorpay order
+        // The actual Razorpay order creation is handled by /payments/create-order endpoint
+        // This is called from the frontend after checkout
 
         paymentResponse = {
-          razorpayOrderId: mockRazorpayId,
-          amount: totalAmount * 100, // Razorpay expects paise
+          requiresPayment: true,
+          orderId: order.id,
+          amount: totalAmount,
           currency: 'INR',
-          key: 'rzp_test_mock_key' // TODO: Replace with process.env.RAZORPAY_KEY_ID
+          paymentMethod: paymentMethod
         }
+      } else {
+        // For COD, mark payment as pending and order as confirmed
+        await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({
+            payment_status: 'pending',
+            status: 'confirmed'
+          })
+          .eq('id', order.id)
       }
 
       return {

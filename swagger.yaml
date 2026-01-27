@@ -1,0 +1,1797 @@
+openapi: 3.0.0
+info:
+  title: Ani & Ayu API
+  description: E-commerce API for children's ethnic wear
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@aniayu.com
+
+servers:
+  - url: http://localhost:3001
+    description: Development server
+  - url: https://api.aniayu.com
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Products
+    description: Product catalog management
+  - name: Categories
+    description: Product category management
+  - name: Cart
+    description: Shopping cart operations
+  - name: Addresses
+    description: User address management
+  - name: Orders
+    description: Order management and tracking
+  - name: Checkout
+    description: Checkout and payment processing
+  - name: Payments
+    description: Payment verification
+  - name: Homepage
+    description: Homepage content endpoints
+  - name: Banners
+    description: Homepage banner management
+  - name: Guest
+    description: Guest session management
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter JWT token in format - Bearer <token>
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        short_description:
+          type: string
+        price:
+          type: number
+          format: float
+        original_price:
+          type: number
+          format: float
+        discount_percent:
+          type: number
+        currency:
+          type: string
+          default: INR
+        image_url:
+          type: string
+          format: uri
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+        video_url:
+          type: string
+          format: uri
+        sizes:
+          type: array
+          items:
+            type: string
+        colors:
+          type: array
+          items:
+            type: string
+        category_id:
+          type: string
+          format: uuid
+        material:
+          type: string
+        occasion:
+          type: string
+        age_range:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        in_stock:
+          type: boolean
+        featured:
+          type: boolean
+        rating:
+          type: number
+          format: float
+        review_count:
+          type: integer
+        sku:
+          type: string
+        barcode:
+          type: string
+        brand:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        specifications:
+          type: object
+        stock_quantity:
+          type: integer
+        low_stock_threshold:
+          type: integer
+        shipping_weight:
+          type: number
+        dimensions:
+          type: object
+        return_policy:
+          type: string
+        warranty:
+          type: string
+        meta_title:
+          type: string
+        meta_description:
+          type: string
+        meta_keywords:
+          type: string
+        status:
+          type: string
+          enum: [active, draft, archived]
+        customizable:
+          type: boolean
+        suggested:
+          type: boolean
+        allProduct:
+          type: boolean
+        section:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        image_url:
+          type: string
+          format: uri
+        featured:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CartItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+        size:
+          type: string
+        color:
+          type: string
+        product:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            price:
+              type: number
+            image_url:
+              type: string
+            slug:
+              type: string
+        total:
+          type: number
+
+    Address:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        guest_id:
+          type: string
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        address_line1:
+          type: string
+        address_line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postal_code:
+          type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        guest_id:
+          type: string
+        guest_email:
+          type: string
+          format: email
+        address_id:
+          type: string
+          format: uuid
+        total_amount:
+          type: number
+        status:
+          type: string
+          enum: [pending, confirmed, processing, shipped, delivered, cancelled]
+        payment_status:
+          type: string
+          enum: [pending, paid, failed, refunded]
+        created_at:
+          type: string
+          format: date-time
+        address:
+          $ref: '#/components/schemas/Address'
+        items:
+          type: array
+          items:
+            type: object
+
+    Banner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        subtitle:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+          format: uri
+        ctaText:
+          type: string
+        ctaLink:
+          type: string
+        backgroundColor:
+          type: string
+        textColor:
+          type: string
+        featured:
+          type: boolean
+        order:
+          type: integer
+        active:
+          type: boolean
+
+paths:
+  /:
+    get:
+      summary: API Health Check
+      description: Returns API server information and health status
+      tags:
+        - Health
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  version:
+                    type: string
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /health:
+    get:
+      summary: Health Check
+      description: Returns server health status
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+
+  # Authentication Endpoints
+  /api/auth/register:
+    post:
+      summary: Register a new user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 6
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      email:
+                        type: string
+                      firstName:
+                        type: string
+                      lastName:
+                        type: string
+                      role:
+                        type: string
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      summary: Login user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  token:
+                    type: string
+                  user:
+                    type: object
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/logout:
+    post:
+      summary: Logout user
+      tags:
+        - Authentication
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/guest/session:
+    post:
+      summary: Start a guest session
+      tags:
+        - Guest
+      responses:
+        '200':
+          description: Guest session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  guestId:
+                    type: string
+
+  # Product Endpoints
+  /api/products:
+    get:
+      summary: Get all products
+      description: Get all products with optional filtering and sorting
+      tags:
+        - Products
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by category slug
+        - name: minPrice
+          in: query
+          schema:
+            type: number
+          description: Minimum price filter
+        - name: maxPrice
+          in: query
+          schema:
+            type: number
+          description: Maximum price filter
+        - name: size
+          in: query
+          schema:
+            type: string
+          description: Filter by available size
+        - name: inStock
+          in: query
+          schema:
+            type: boolean
+          description: Filter by stock status
+        - name: featured
+          in: query
+          schema:
+            type: boolean
+          description: Filter featured products
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search in product name and description
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [price-asc, price-desc, name, rating, newest]
+          description: Sort products
+        - name: limit
+          in: query
+          schema:
+            type: number
+          description: Number of products to return
+        - name: offset
+          in: query
+          schema:
+            type: number
+            default: 0
+          description: Number of products to skip
+      responses:
+        '200':
+          description: Products retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+                      hasNext:
+                        type: boolean
+                      hasPrev:
+                        type: boolean
+                  filters:
+                    type: object
+
+    post:
+      summary: Create a new product
+      tags:
+        - Products
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - price
+                - category_id
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                description:
+                  type: string
+                short_description:
+                  type: string
+                price:
+                  type: number
+                original_price:
+                  type: number
+                discount_percent:
+                  type: number
+                currency:
+                  type: string
+                  default: INR
+                image_url:
+                  type: string
+                images:
+                  type: array
+                  items:
+                    type: string
+                video_url:
+                  type: string
+                sizes:
+                  type: array
+                  items:
+                    type: string
+                colors:
+                  type: array
+                  items:
+                    type: string
+                category_id:
+                  type: string
+                  format: uuid
+                material:
+                  type: string
+                occasion:
+                  type: string
+                age_range:
+                  type: string
+                features:
+                  type: array
+                  items:
+                    type: string
+                in_stock:
+                  type: boolean
+                featured:
+                  type: boolean
+                sku:
+                  type: string
+                barcode:
+                  type: string
+                brand:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                specifications:
+                  type: object
+                stock_quantity:
+                  type: number
+                low_stock_threshold:
+                  type: number
+                shipping_weight:
+                  type: number
+                dimensions:
+                  type: object
+                return_policy:
+                  type: string
+                warranty:
+                  type: string
+                meta_title:
+                  type: string
+                meta_description:
+                  type: string
+                meta_keywords:
+                  type: string
+                status:
+                  type: string
+                  enum: [active, draft, archived]
+                customizable:
+                  type: boolean
+                suggested:
+                  type: boolean
+                allProduct:
+                  type: boolean
+                section:
+                  type: number
+      responses:
+        '201':
+          description: Product created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  product:
+                    $ref: '#/components/schemas/Product'
+
+  /api/products/{id}:
+    get:
+      summary: Get a single product by ID
+      tags:
+        - Products
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update an existing product
+      tags:
+        - Products
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                description:
+                  type: string
+                price:
+                  type: number
+                # ... (all product fields as optional)
+      responses:
+        '200':
+          description: Product updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  product:
+                    $ref: '#/components/schemas/Product'
+
+    delete:
+      summary: Delete a product
+      tags:
+        - Products
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/products/{id}/related:
+    get:
+      summary: Get products related to a specific product
+      tags:
+        - Products
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: number
+            default: 4
+      responses:
+        '200':
+          description: Related products retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  total:
+                    type: integer
+
+  # Category Endpoints
+  /api/categories:
+    get:
+      summary: Get all categories
+      tags:
+        - Categories
+      parameters:
+        - name: featured
+          in: query
+          schema:
+            type: boolean
+          description: Filter featured categories only
+      responses:
+        '200':
+          description: Categories retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  total:
+                    type: integer
+
+    post:
+      summary: Create a new category
+      tags:
+        - Categories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                description:
+                  type: string
+                image_url:
+                  type: string
+                featured:
+                  type: boolean
+      responses:
+        '201':
+          description: Category created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  category:
+                    $ref: '#/components/schemas/Category'
+
+  /api/categories/{id}:
+    get:
+      summary: Get a single category by ID
+      tags:
+        - Categories
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Category retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+
+    put:
+      summary: Update an existing category
+      tags:
+        - Categories
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                description:
+                  type: string
+                image_url:
+                  type: string
+                featured:
+                  type: boolean
+      responses:
+        '200':
+          description: Category updated successfully
+
+    delete:
+      summary: Delete a category
+      tags:
+        - Categories
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Category deleted successfully
+
+  # Cart Endpoints
+  /api/cart:
+    get:
+      summary: Get current cart
+      tags:
+        - Cart
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      responses:
+        '200':
+          description: Cart retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CartItem'
+                  summary:
+                    type: object
+                    properties:
+                      totalItems:
+                        type: integer
+                      subtotal:
+                        type: number
+
+  /api/cart/add:
+    post:
+      summary: Add item to cart
+      tags:
+        - Cart
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - productId
+              properties:
+                productId:
+                  type: string
+                  format: uuid
+                quantity:
+                  type: number
+                  minimum: 1
+                size:
+                  type: string
+                color:
+                  type: string
+      responses:
+        '200':
+          description: Item added to cart
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  item:
+                    type: object
+
+  /api/cart/item/{id}:
+    delete:
+      summary: Remove item from cart
+      tags:
+        - Cart
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      responses:
+        '200':
+          description: Item removed from cart
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  # Address Endpoints
+  /api/addresses:
+    get:
+      summary: Get all user addresses
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      responses:
+        '200':
+          description: Addresses retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  addresses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Address'
+
+    post:
+      summary: Create a new address
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fullName
+                - phone
+                - addressLine1
+                - city
+                - state
+                - country
+                - postalCode
+              properties:
+                fullName:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                addressLine1:
+                  type: string
+                addressLine2:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                country:
+                  type: string
+                postalCode:
+                  type: string
+                isDefault:
+                  type: boolean
+      responses:
+        '200':
+          description: Address created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  address:
+                    $ref: '#/components/schemas/Address'
+
+  /api/addresses/{id}:
+    put:
+      summary: Update an address
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName:
+                  type: string
+                phone:
+                  type: string
+                addressLine1:
+                  type: string
+                addressLine2:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                country:
+                  type: string
+                postalCode:
+                  type: string
+                isDefault:
+                  type: boolean
+      responses:
+        '200':
+          description: Address updated successfully
+
+    delete:
+      summary: Delete an address
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      responses:
+        '200':
+          description: Address deleted successfully
+
+  /api/addresses/{id}/default:
+    patch:
+      summary: Set address as default
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      responses:
+        '200':
+          description: Default address updated
+
+  # Order Endpoints
+  /api/orders:
+    get:
+      summary: Get all orders for the current user or guest
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      responses:
+        '200':
+          description: Orders retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+
+  /api/orders/track:
+    post:
+      summary: Track guest orders using Email and Phone
+      tags:
+        - Orders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - phone
+              properties:
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: Orders found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+
+  /api/orders/{id}:
+    get:
+      summary: Get details of a specific order
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      responses:
+        '200':
+          description: Order retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  order:
+                    $ref: '#/components/schemas/Order'
+
+  /api/orders/all:
+    get:
+      summary: Admin - List all orders with full details
+      tags:
+        - Orders
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: number
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: number
+            default: 0
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by order number or email
+      responses:
+        '200':
+          description: Orders retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+
+  /api/orders/details/{id}:
+    get:
+      summary: Admin - Get details of a specific order including payments
+      tags:
+        - Orders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order retrieved successfully
+
+  /api/orders/{id}/status:
+    put:
+      summary: Admin - Update order status
+      tags:
+        - Orders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [pending, confirmed, processing, shipped, delivered, cancelled]
+      responses:
+        '200':
+          description: Order status updated
+
+  # Checkout Endpoints
+  /api/checkout:
+    post:
+      summary: Place an order using existing cart and address
+      tags:
+        - Checkout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-guest-id
+          in: header
+          schema:
+            type: string
+          description: Guest session ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - addressId
+              properties:
+                addressId:
+                  type: string
+                  format: uuid
+                paymentMethod:
+                  type: string
+                  enum: [cod, card, upi]
+                cartItemIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Order placed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  orderId:
+                    type: string
+                  message:
+                    type: string
+                  razorpayOrderId:
+                    type: string
+                  amount:
+                    type: number
+                  currency:
+                    type: string
+                  key:
+                    type: string
+
+  # Payment Endpoints
+  /api/payments/verify:
+    post:
+      summary: Verify Razorpay payment signature and update order status
+      tags:
+        - Payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - razorpayOrderId
+                - razorpayPaymentId
+                - razorpaySignature
+              properties:
+                razorpayOrderId:
+                  type: string
+                razorpayPaymentId:
+                  type: string
+                razorpaySignature:
+                  type: string
+      responses:
+        '200':
+          description: Payment verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  orderId:
+                    type: string
+
+  # Homepage Endpoints
+  /api/homepage/banners:
+    get:
+      summary: Get homepage banners
+      tags:
+        - Homepage
+      responses:
+        '200':
+          description: Banners retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  banners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Banner'
+
+  /api/homepage/best-sellers:
+    get:
+      summary: Get best-selling products
+      tags:
+        - Homepage
+      responses:
+        '200':
+          description: Best sellers retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bestSellers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        price:
+                          type: number
+                        originalPrice:
+                          type: number
+                        image:
+                          type: string
+                        rating:
+                          type: number
+                        reviewCount:
+                          type: integer
+                        salesCount:
+                          type: integer
+                        rank:
+                          type: integer
+
+  /api/homepage/top-picks:
+    get:
+      summary: Get top picks products
+      tags:
+        - Homepage
+      responses:
+        '200':
+          description: Top picks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topPicks:
+                    type: array
+                    items:
+                      type: object
+
+  # Banner Management Endpoints
+  /api/banners:
+    get:
+      summary: Get all banners
+      tags:
+        - Banners
+      parameters:
+        - name: featured
+          in: query
+          schema:
+            type: boolean
+          description: Filter by featured status
+        - name: active
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Filter by active status
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: Limit number of results
+      responses:
+        '200':
+          description: Banners retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  banners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Banner'
+
+    post:
+      summary: Create a new homepage banner
+      tags:
+        - Banners
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - image
+              properties:
+                title:
+                  type: string
+                subtitle:
+                  type: string
+                description:
+                  type: string
+                image:
+                  type: string
+                ctaText:
+                  type: string
+                ctaLink:
+                  type: string
+                backgroundColor:
+                  type: string
+                textColor:
+                  type: string
+                featured:
+                  type: boolean
+                  default: false
+                active:
+                  type: boolean
+                  default: true
+                order:
+                  type: integer
+                  default: 0
+      responses:
+        '201':
+          description: Banner created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  banner:
+                    $ref: '#/components/schemas/Banner'
+
+  /api/banners/featured:
+    get:
+      summary: Get featured banners for homepage carousel
+      tags:
+        - Banners
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 5
+      responses:
+        '200':
+          description: Featured banners retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  banners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Banner'
+
+  /api/banners/{id}:
+    put:
+      summary: Update a homepage banner
+      tags:
+        - Banners
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                subtitle:
+                  type: string
+                description:
+                  type: string
+                image:
+                  type: string
+                ctaText:
+                  type: string
+                ctaLink:
+                  type: string
+                backgroundColor:
+                  type: string
+                textColor:
+                  type: string
+                featured:
+                  type: boolean
+                active:
+                  type: boolean
+                order:
+                  type: integer
+      responses:
+        '200':
+          description: Banner updated successfully
+
+    delete:
+      summary: Delete a homepage banner
+      tags:
+        - Banners
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Banner deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string

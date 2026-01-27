@@ -1,0 +1,341 @@
+{
+    "info": {
+        "name": "Razorpay Payment Integration",
+        "description": "Complete API collection for testing Razorpay payment flow",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "1. Checkout - Create Order",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "x-guest-id",
+                        "value": "{{guestId}}",
+                        "description": "Guest session ID"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"card\",\n  \"cartItemIds\": []\n}"
+                },
+                "url": {
+                    "raw": "{{baseUrl}}/api/checkout",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "api",
+                        "checkout"
+                    ]
+                },
+                "description": "Creates an order in the database and prepares for payment"
+            },
+            "response": []
+        },
+        {
+            "name": "2. Create Razorpay Order",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": 2999,\n  \"currency\": \"INR\"\n}"
+                },
+                "url": {
+                    "raw": "{{baseUrl}}/api/payments/create-order",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "api",
+                        "payments",
+                        "create-order"
+                    ]
+                },
+                "description": "Creates a Razorpay order for payment processing"
+            },
+            "response": []
+        },
+        {
+            "name": "3. Verify Payment",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"razorpay_order_id\": \"{{razorpayOrderId}}\",\n  \"razorpay_payment_id\": \"{{razorpayPaymentId}}\",\n  \"razorpay_signature\": \"{{razorpaySignature}}\"\n}"
+                },
+                "url": {
+                    "raw": "{{baseUrl}}/api/payments/verify",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "api",
+                        "payments",
+                        "verify"
+                    ]
+                },
+                "description": "Verifies the payment signature after successful payment"
+            },
+            "response": []
+        },
+        {
+            "name": "4. Get Payment Details",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{baseUrl}}/api/payments/order/{{orderId}}",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "api",
+                        "payments",
+                        "order",
+                        "{{orderId}}"
+                    ]
+                },
+                "description": "Gets payment details for a specific order"
+            },
+            "response": []
+        },
+        {
+            "name": "Supporting APIs",
+            "item": [
+                {
+                    "name": "Get Cart",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "x-guest-id",
+                                "value": "{{guestId}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/cart",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "cart"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Add to Cart",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-guest-id",
+                                "value": "{{guestId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 1,\n  \"size\": \"M\",\n  \"color\": \"Blue\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/cart/add",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "cart",
+                                "add"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Addresses",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "x-guest-id",
+                                "value": "{{guestId}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/addresses",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "addresses"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Address",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-guest-id",
+                                "value": "{{guestId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"fullName\": \"John Doe\",\n  \"phone\": \"9876543210\",\n  \"email\": \"john@example.com\",\n  \"addressLine1\": \"123 Main Street\",\n  \"addressLine2\": \"Apt 4B\",\n  \"city\": \"Mumbai\",\n  \"state\": \"Maharashtra\",\n  \"country\": \"India\",\n  \"postalCode\": \"400001\",\n  \"isDefault\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/addresses",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "addresses"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Orders",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "x-guest-id",
+                                "value": "{{guestId}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/orders",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "orders"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Order Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "x-guest-id",
+                                "value": "{{guestId}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "orders",
+                                "{{orderId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Products",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/products?limit=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "products"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3002",
+            "type": "string"
+        },
+        {
+            "key": "guestId",
+            "value": "guest_12345",
+            "type": "string"
+        },
+        {
+            "key": "orderId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "addressId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "productId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "razorpayOrderId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "razorpayPaymentId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "razorpaySignature",
+            "value": "",
+            "type": "string"
+        }
+    ]
+}

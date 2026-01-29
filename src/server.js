@@ -77,8 +77,8 @@ await fastify.register(swagger, {
       description: 'E-commerce API for children\'s ethnic wear',
       version: '1.0.0'
     },
-    host: process.env.NODE_ENV === 'production' 
-      ? process.env.API_HOST 
+    host: process.env.NODE_ENV === 'production'
+      ? process.env.API_HOST
       : `localhost:${process.env.PORT || 3002}`,
     schemes: process.env.NODE_ENV === 'production' ? ['https'] : ['http'],
     consumes: ['application/json'],
@@ -113,7 +113,7 @@ await fastify.register(swaggerUi, {
 
 // Health check endpoint
 fastify.get('/', async (request, reply) => {
-  return { 
+  return {
     message: 'Ani & Ayu API Server',
     version: '1.0.0',
     status: 'healthy',
@@ -122,8 +122,8 @@ fastify.get('/', async (request, reply) => {
 })
 
 fastify.get('/health', async (request, reply) => {
-  return { 
-    status: 'ok', 
+  return {
+    status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   }
@@ -131,7 +131,7 @@ fastify.get('/health', async (request, reply) => {
 
 // Test route to verify API routing works
 fastify.get('/api/test', async (request, reply) => {
-  return { 
+  return {
     message: 'API routing works!',
     timestamp: new Date().toISOString()
   }
@@ -177,7 +177,7 @@ fastify.setErrorHandler((error, request, reply) => {
   }
 
   request.log.error(error)
-  
+
   return reply.status(error.statusCode || 500).send({
     error: error.name || 'Internal Server Error',
     message: error.message || 'An unexpected error occurred'
@@ -188,14 +188,15 @@ fastify.setErrorHandler((error, request, reply) => {
 const start = async () => {
   try {
     const port = process.env.PORT || 3002
-    const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'
-    
+    // Bind to 0.0.0.0 in production or when PORT is set (Render sets PORT)
+    const host = (process.env.NODE_ENV === 'production' || process.env.PORT) ? '0.0.0.0' : '127.0.0.1'
+
     await fastify.listen({ port, host })
-    
+
     // Debug: Print all registered routes
     console.log('🔍 All registered routes:')
     fastify.printRoutes()
-    
+
     fastify.log.info(`Server running at http://${host}:${port}`)
     fastify.log.info(`API Documentation: http://${host}:${port}/docs`)
   } catch (err) {

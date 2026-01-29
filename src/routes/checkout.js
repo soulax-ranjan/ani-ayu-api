@@ -86,8 +86,19 @@ async function checkoutRoutes(fastify, options) {
         return reply.status(400).send({ error: 'Invalid address' })
       }
 
-      // 5. Create Order
+      // 5. Create Order (with cart snapshot for online payments)
       const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'upi'
+
+      // Store cart items as JSON for online payments (to be processed after verification)
+      const cartSnapshot = items.map(item => ({
+        cart_item_id: item.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price_at_purchase: item.products.price,
+        size: item.size,
+        color: item.color
+      }))
+
       const orderData = {
         user_id: userId || null,
         guest_id: userId ? null : guestId,
@@ -95,7 +106,10 @@ async function checkoutRoutes(fastify, options) {
         address_id: addressId,
         total_amount: totalAmount,
         status: 'pending',
-        payment_status: 'pending'
+        payment_status: 'pending',
+        payment_method: paymentMethod,
+        // Store cart snapshot for online payments
+        cart_snapshot: isOnlinePayment ? cartSnapshot : null
       }
 
       const { data: order, error: orderError } = await supabaseAdmin
@@ -106,65 +120,110 @@ async function checkoutRoutes(fastify, options) {
 
       if (orderError) return handleSupabaseError(orderError, reply)
 
-      // 6. Move Items to Order Items
-      const orderItems = items.map(item => ({
-        order_id: order.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        price_at_purchase: item.products.price,
-        size: item.size,
-        color: item.color
-      }))
+      // For COD: Finalize order immediately (insert items, clear cart)
+      if (!isOnlinePayment) {
+        // 6. Insert Order Items
+        const orderItems = items.map(item => ({
+          order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price_at_purchase: item.products.price,
+          size: item.size,
+          color: item.color
+        }))
 
-      const { error: itemsInsertError } = await supabaseAdmin
-        .from('order_items')
-        .insert(orderItems)
+        const { error: itemsInsertError } = await supabaseAdmin
+          .from('order_items')
+          .insert(orderItems)
 
-      if (itemsInsertError) {
-        console.error('Failed to insert order items', itemsInsertError)
-        return reply.status(500).send({ error: 'Failed to process order items' })
-      }
-
-      // 7. Clear Ordered Items from Cart
-      let deleteQuery = supabaseAdmin.from(TABLES.CART_ITEMS).delete().eq('cart_id', cart.id)
-
-      if (cartItemIds && cartItemIds.length > 0) {
-        const processedIds = items.map(i => i.id)
-        deleteQuery = deleteQuery.in('id', processedIds)
-      }
-
-      await deleteQuery
-
-      // 8. Handle Payment Integration
-      let paymentResponse = {}
-
-      // Update order with payment method
-      await supabaseAdmin
-        .from(TABLES.ORDERS)
-        .update({ payment_method: paymentMethod })
-        .eq('id', order.id)
-
-      if (isOnlinePayment) {
-        // For online payments, we need to create a Razorpay order
-        // The actual Razorpay order creation is handled by /payments/create-order endpoint
-        // This is called from the frontend after checkout
-
-        paymentResponse = {
-          requiresPayment: true,
-          orderId: order.id,
-          amount: totalAmount,
-          currency: 'INR',
-          paymentMethod: paymentMethod
+        if (itemsInsertError) {
+          console.error('Failed to insert order items', itemsInsertError)
+          return reply.status(500).send({ error: 'Failed to process order items' })
         }
-      } else {
-        // For COD, mark payment as pending and order as confirmed
+
+        // 7. Clear Cart Items
+        let deleteQuery = supabaseAdmin.from(TABLES.CART_ITEMS).delete().eq('cart_id', cart.id)
+
+        if (cartItemIds && cartItemIds.length > 0) {
+          const processedIds = items.map(i => i.id)
+          deleteQuery = deleteQuery.in('id', processedIds)
+        }
+
+        await deleteQuery
+
+        // 8. Mark COD order as confirmed
         await supabaseAdmin
           .from(TABLES.ORDERS)
           .update({
             payment_status: 'pending',
-            status: 'confirmed'
+            status: 'confirmed',
+            cart_snapshot: null // Clear snapshot after processing
           })
           .eq('id', order.id)
+      }
+
+      // 9. Handle Payment Response
+      let paymentResponse = {}
+
+      if (isOnlinePayment) {
+        // For online payments: Create Razorpay order automatically
+        try {
+          const Razorpay = (await import('razorpay')).default
+          const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET
+          })
+
+          // Create Razorpay order
+          const razorpayOrder = await razorpay.orders.create({
+            amount: Math.round(totalAmount * 100), // Convert to paise
+            currency: 'INR',
+            receipt: order.id,
+            notes: {
+              order_id: order.id
+            }
+          })
+
+          // Store payment record
+          const { error: paymentError } = await supabaseAdmin
+            .from(TABLES.PAYMENTS)
+            .insert({
+              order_id: order.id,
+              razorpay_order_id: razorpayOrder.id,
+              amount: totalAmount,
+              currency: 'INR',
+              status: 'pending',
+              razorpay_data: razorpayOrder
+            })
+
+          if (paymentError) {
+            console.error('Failed to create payment record:', paymentError)
+          }
+
+          // Update order with razorpay_order_id
+          await supabaseAdmin
+            .from(TABLES.ORDERS)
+            .update({ razorpay_order_id: razorpayOrder.id })
+            .eq('id', order.id)
+
+          // Return Razorpay order details
+          paymentResponse = {
+            requiresPayment: true,
+            orderId: order.id,
+            razorpayOrderId: razorpayOrder.id,
+            amount: razorpayOrder.amount, // Amount in paise
+            currency: razorpayOrder.currency,
+            key: process.env.RAZORPAY_KEY_ID,
+            paymentMethod: paymentMethod,
+            message: 'Razorpay order created. Complete payment to finalize.'
+          }
+        } catch (error) {
+          console.error('Failed to create Razorpay order:', error)
+          return reply.status(500).send({
+            error: 'Payment Initialization Failed',
+            message: 'Failed to create payment order. Please try again.'
+          })
+        }
       }
 
       return {

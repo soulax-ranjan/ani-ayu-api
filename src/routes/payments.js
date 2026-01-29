@@ -233,12 +233,60 @@ async function paymentRoutes(fastify, options) {
         return handleSupabaseError(updatePaymentError, reply)
       }
 
-      // 5. Update Order Status
+      // 5. Finalize Order: Insert Order Items and Clear Cart
+      const { data: order, error: orderFetchError } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select('*, cart_snapshot')
+        .eq('id', paymentRecord.order_id)
+        .single()
+
+      if (orderFetchError || !order) {
+        console.error('Failed to fetch order:', orderFetchError)
+        return reply.status(404).send({ error: 'Order not found' })
+      }
+
+      // Insert order items from cart snapshot
+      if (order.cart_snapshot && Array.isArray(order.cart_snapshot)) {
+        const orderItems = order.cart_snapshot.map(item => ({
+          order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price_at_purchase: item.price_at_purchase,
+          size: item.size,
+          color: item.color
+        }))
+
+        const { error: itemsInsertError } = await supabaseAdmin
+          .from('order_items')
+          .insert(orderItems)
+
+        if (itemsInsertError) {
+          console.error('Failed to insert order items:', itemsInsertError)
+          // Continue anyway - we can manually fix this
+        }
+
+        // Clear cart items
+        const cartItemIds = order.cart_snapshot.map(item => item.cart_item_id).filter(Boolean)
+        if (cartItemIds.length > 0) {
+          const { error: clearCartError } = await supabaseAdmin
+            .from(TABLES.CART_ITEMS)
+            .delete()
+            .in('id', cartItemIds)
+
+          if (clearCartError) {
+            console.error('Failed to clear cart:', clearCartError)
+            // Continue anyway
+          }
+        }
+      }
+
+      // 6. Update Order Status
       const { error: updateOrderError } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .update({
           payment_status: 'paid',
           status: 'confirmed', // Move from pending to confirmed
+          cart_snapshot: null, // Clear snapshot after processing
           updated_at: new Date().toISOString()
         })
         .eq('id', paymentRecord.order_id)

@@ -98,7 +98,9 @@ await fastify.register(swagger, {
       { name: 'Orders', description: 'Order management endpoints' },
       { name: 'Auth', description: 'Authentication endpoints' },
       { name: 'Homepage', description: 'Homepage content endpoints' },
-      { name: 'Upload', description: 'Image upload endpoints' }
+      { name: 'Upload', description: 'Image upload endpoints' },
+      { name: 'Coupons', description: 'Coupon/promo code endpoints' },
+      { name: 'Payments', description: 'Payment processing endpoints' }
     ]
   }
 })
@@ -162,6 +164,8 @@ console.log('🔄 Registering checkout routes...')
 await fastify.register(import('./routes/checkout.js'))
 console.log('🔄 Registering payment routes...')
 await fastify.register(import('./routes/payments.js'))
+console.log('🔄 Registering coupon routes...')
+await fastify.register(import('./routes/coupons.js'))
 console.log('✅ All routes registered successfully!')
 
 // Global error handler
@@ -205,4 +209,8 @@ const start = async () => {
   }
 }
 
-start()
+if (process.argv[1] === import.meta.url || process.argv[1].endsWith('server.js')) {
+  start()
+}
+
+export { fastify }

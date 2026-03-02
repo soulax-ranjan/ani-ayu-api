@@ -2,12 +2,12 @@ import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
 
 async function productRoutes(fastify, options) {
   console.log('📦 Products route handler called')
-  
+
   // Add route logging for debugging
   fastify.addHook('onRoute', (routeOptions) => {
     console.log(`🔗 Route added: ${routeOptions.method} ${routeOptions.url}`)
   })
-  
+
   const { z } = await import('zod')
 
   // Validation schemas
@@ -68,7 +68,7 @@ async function productRoutes(fastify, options) {
           meta_title: { type: 'string' },
           meta_description: { type: 'string' },
           meta_keywords: { type: 'string' },
-          status: { type: 'string', enum: ['active', 'draft', 'archived'] },
+          status: { type: 'string', enum: ['active', 'inactive', 'draft', 'archived'] },
           customizable: { type: 'boolean' },
           suggested: { type: 'boolean' },
           allProduct: { type: 'boolean' },
@@ -79,6 +79,18 @@ async function productRoutes(fastify, options) {
     }
   }, async (request, reply) => {
     try {
+      // Define Size Chart Item Schema
+      const SizeChartItemSchema = z.object({
+        enabled: z.boolean().default(true),
+        top_length: z.string().optional(),
+        chest: z.string().optional(),
+        bottom_length: z.string().optional(),
+        waist: z.string().optional(),
+        hip: z.string().optional(),
+        length: z.string().optional(),
+        sleeve_length: z.string().optional()
+      }).catchall(z.any()) // Allow other measurements if needed
+
       const zBody = z.object({
         name: z.string().min(1),
         slug: z.string().optional(),
@@ -100,7 +112,6 @@ async function productRoutes(fastify, options) {
         features: z.array(z.string()).optional(),
         in_stock: z.boolean().default(true).optional(),
         featured: z.boolean().default(false).optional(),
-        // stock_quantity: z.number().int().min(0).default(0).optional(), // Removing to match requested fields explicitly
         sku: z.string().optional(),
         barcode: z.string().optional(),
         brand: z.string().optional(),
@@ -110,16 +121,19 @@ async function productRoutes(fastify, options) {
         low_stock_threshold: z.number().int().min(0).optional(),
         shipping_weight: z.number().min(0).optional(),
         dimensions: z.record(z.any()).optional(),
+        size_chart: z.record(SizeChartItemSchema).optional(),
         return_policy: z.string().optional(),
         warranty: z.string().optional(),
         meta_title: z.string().optional(),
         meta_description: z.string().optional(),
         meta_keywords: z.string().optional(),
-        status: z.enum(['active', 'draft', 'archived']).default('active').optional(),
+        status: z.enum(['active', 'inactive', 'draft', 'archived']).default('active').optional(),
         customizable: z.boolean().default(false).optional(),
         suggested: z.boolean().default(false).optional(),
         allProduct: z.boolean().default(false).optional(),
-        section: z.number().int().min(0).default(0).optional()
+        section: z.number().int().min(0).default(0).optional(),
+        rating: z.number().min(0).max(5).default(0).optional(),
+        review_count: z.number().int().min(0).default(0).optional()
       })
 
       const body = zBody.parse(request.body)
@@ -129,7 +143,7 @@ async function productRoutes(fastify, options) {
         body.slug = body.name
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
-          .replace(/(^-|-$)+/g, '') + 
+          .replace(/(^-|-$)+/g, '') +
           '-' + Math.random().toString(36).substring(2, 7)
       }
 
@@ -158,7 +172,7 @@ async function productRoutes(fastify, options) {
           details: error.errors
         })
       }
-      
+
       console.error('Create product error:', error)
       return reply.status(500).send({
         error: 'Internal Server Error',
@@ -215,7 +229,7 @@ async function productRoutes(fastify, options) {
           meta_title: { type: 'string' },
           meta_description: { type: 'string' },
           meta_keywords: { type: 'string' },
-          status: { type: 'string', enum: ['active', 'draft', 'archived'] },
+          status: { type: 'string', enum: ['active', 'inactive', 'draft', 'archived'] },
           customizable: { type: 'boolean' },
           suggested: { type: 'boolean' },
           allProduct: { type: 'boolean' },
@@ -226,7 +240,18 @@ async function productRoutes(fastify, options) {
   }, async (request, reply) => {
     try {
       const { id } = request.params
-      
+
+      const SizeChartItemSchema = z.object({
+        enabled: z.boolean().default(true),
+        top_length: z.string().optional(),
+        chest: z.string().optional(),
+        bottom_length: z.string().optional(),
+        waist: z.string().optional(),
+        hip: z.string().optional(),
+        length: z.string().optional(),
+        sleeve_length: z.string().optional()
+      }).catchall(z.any())
+
       const zBody = z.object({
         name: z.string().min(1).optional(),
         slug: z.string().optional(),
@@ -257,12 +282,13 @@ async function productRoutes(fastify, options) {
         low_stock_threshold: z.number().int().min(0).optional(),
         shipping_weight: z.number().min(0).optional(),
         dimensions: z.record(z.any()).optional(),
+        size_chart: z.record(SizeChartItemSchema).optional(),
         return_policy: z.string().optional(),
         warranty: z.string().optional(),
         meta_title: z.string().optional(),
         meta_description: z.string().optional(),
         meta_keywords: z.string().optional(),
-        status: z.enum(['active', 'draft', 'archived']).optional(),
+        status: z.enum(['active', 'inactive', 'draft', 'archived']).optional(),
         customizable: z.boolean().optional(),
         suggested: z.boolean().optional(),
         allProduct: z.boolean().optional(),
@@ -318,7 +344,7 @@ async function productRoutes(fastify, options) {
           details: error.errors
         })
       }
-      
+
       console.error('Update product error:', error)
       return reply.status(500).send({
         error: 'Internal Server Error',
@@ -343,10 +369,10 @@ async function productRoutes(fastify, options) {
           inStock: { type: 'boolean', description: 'Filter by stock status' },
           featured: { type: 'boolean', description: 'Filter featured products' },
           search: { type: 'string', description: 'Search in product name and description' },
-          sort: { 
-            type: 'string', 
+          sort: {
+            type: 'string',
             enum: ['price-asc', 'price-desc', 'name', 'rating', 'newest'],
-            description: 'Sort products' 
+            description: 'Sort products'
           },
           limit: { type: 'number', description: 'Number of products to return (optional, returns all if not specified)' },
           offset: { type: 'number', default: 0, description: 'Number of products to skip' }
@@ -357,7 +383,7 @@ async function productRoutes(fastify, options) {
     try {
       // Handle empty query params gracefully
       const query = request.query || {}
-      
+
       // Parse and validate query params only if they exist
       let parsedQuery = {}
       try {
@@ -369,7 +395,7 @@ async function productRoutes(fastify, options) {
           // All other fields will be undefined
         }
       }
-      
+
       // Build Supabase query with enhanced fields
       let supabaseQuery = supabaseAdmin.from(TABLES.PRODUCTS).select(`
         id,
@@ -406,6 +432,7 @@ async function productRoutes(fastify, options) {
         low_stock_threshold,
         shipping_weight,
         dimensions,
+        size_chart,
         return_policy,
         warranty,
         meta_title,
@@ -568,6 +595,7 @@ async function productRoutes(fastify, options) {
         low_stock_threshold,
         shipping_weight,
         dimensions,
+        size_chart,
         return_policy,
         warranty,
         meta_title,
@@ -741,7 +769,7 @@ async function productRoutes(fastify, options) {
         .single()
 
       if (fetchError || !product) {
-         return reply.status(404).send({
+        return reply.status(404).send({
           error: 'Product Not Found',
           message: `Product with ID '${id}' not found`
         })
@@ -763,7 +791,7 @@ async function productRoutes(fastify, options) {
       }
 
     } catch (error) {
-       return reply.status(500).send({
+      return reply.status(500).send({
         error: 'Internal Server Error',
         message: 'Failed to delete product'
       })

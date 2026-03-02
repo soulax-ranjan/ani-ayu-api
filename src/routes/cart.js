@@ -42,7 +42,7 @@ async function cartRoutes(fastify, options) {
         .insert(userId ? { user_id: userId } : { guest_id: guestId })
         .select()
         .single()
-      
+
       if (createError) throw createError
       cart = newCart
     } else if (error && error.code !== 'PGRST116') {
@@ -50,13 +50,13 @@ async function cartRoutes(fastify, options) {
     }
 
     if (!cart) {
-         const { data: newCart, error: createError } = await supabaseAdmin
+      const { data: newCart, error: createError } = await supabaseAdmin
         .from(TABLES.CARTS)
         .insert(userId ? { user_id: userId } : { guest_id: guestId })
         .select()
         .single()
-         if (createError) throw createError
-         cart = newCart
+      if (createError) throw createError
+      cart = newCart
     }
 
     return cart
@@ -132,9 +132,9 @@ async function cartRoutes(fastify, options) {
         item: result
       }
     } catch (error) {
-       if (error.status === 400) return reply.status(400).send(error)
-       console.error('Add to cart error:', error)
-       if (error instanceof z.ZodError) {
+      if (error.status === 400) return reply.status(400).send(error)
+      console.error('Add to cart error:', error)
+      if (error instanceof z.ZodError) {
         return reply.status(400).send({
           error: 'Validation Error',
           message: 'Invalid input data',
@@ -200,7 +200,7 @@ async function cartRoutes(fastify, options) {
 
     } catch (error) {
       if (error.status === 400) {
-         return { items: [], summary: { totalItems: 0, subtotal: 0 } }
+        return { items: [], summary: { totalItems: 0, subtotal: 0 } }
       }
       console.error('Get cart error:', error)
       return reply.status(500).send({ error: 'Internal Server Error' })
@@ -237,6 +237,42 @@ async function cartRoutes(fastify, options) {
     } catch (error) {
       console.error('Delete cart item error:', error)
       return reply.status(500).send({ error: 'Internal Server Error' })
+    }
+  })
+
+  // DELETE /cart - Clear entire cart
+  fastify.delete('/cart', {
+    preHandler: [fastify.authenticateOptional],
+    schema: {
+      tags: ['Cart'],
+      description: 'Clear all items from cart'
+    }
+  }, async (request, reply) => {
+    try {
+      const cart = await getActiveCart(request)
+
+      const { error } = await supabaseAdmin
+        .from(TABLES.CART_ITEMS)
+        .delete()
+        .eq('cart_id', cart.id)
+
+      if (error) throw error
+
+      return {
+        success: true,
+        message: 'Cart cleared',
+        items: [],
+        summary: {
+          totalItems: 0,
+          subtotal: 0
+        }
+      }
+    } catch (error) {
+      console.error('Clear cart error:', error)
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to clear cart'
+      })
     }
   })
 }

@@ -156,7 +156,7 @@ components:
           type: string
         status:
           type: string
-          enum: [active, draft, archived]
+          enum: [active, inactive, draft, archived]
         customizable:
           type: boolean
         suggested:
@@ -693,7 +693,7 @@ paths:
                   type: string
                 status:
                   type: string
-                  enum: [active, draft, archived]
+                  enum: [active, inactive, draft, archived]
                 customizable:
                   type: boolean
                 suggested:

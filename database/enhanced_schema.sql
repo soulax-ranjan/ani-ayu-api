@@ -22,6 +22,7 @@ ADD COLUMN IF NOT EXISTS meta_title VARCHAR(200),
 ADD COLUMN IF NOT EXISTS meta_description TEXT,
 ADD COLUMN IF NOT EXISTS meta_keywords JSONB DEFAULT '[]'::jsonb,
 ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'draft', 'archived')),
+ADD COLUMN IF NOT EXISTS size_chart JSONB DEFAULT '{}'::jsonb,
 ADD COLUMN IF NOT EXISTS customizable BOOLEAN DEFAULT false;
 
 -- Update existing products to have SKUs if they don't

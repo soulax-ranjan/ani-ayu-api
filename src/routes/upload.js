@@ -1,22 +1,12 @@
-import { supabase, supabaseAdmin } from '../lib/supabase.js'
+import { uploadToS3, deleteFromS3, getPresignedUrl, getPublicUrl, getFolderName } from '../lib/s3.js'
 
 export default async function uploadRoutes(fastify, opts) {
-  // Helper to determine bucket name
-  const getBucketName = (type) => {
-    switch (type) {
-      case 'banner':
-        return 'banners'
-      case 'product':
-      default:
-        return 'product-images'
-    }
-  }
 
-  // POST /upload/image - Upload single image to Supabase Storage
+  // POST /upload/image - Upload single image to AWS S3
   fastify.post('/upload/image', {
     schema: {
       tags: ['Upload'],
-      description: 'Upload image to Supabase Storage',
+      description: 'Upload image to AWS S3',
       consumes: ['multipart/form-data'],
       querystring: {
         type: 'object',
@@ -52,11 +42,11 @@ export default async function uploadRoutes(fastify, opts) {
         })
       }
 
-      const bucketName = getBucketName(request.query.type)
+      const folderName = getFolderName(request.query.type)
 
       // Get the uploaded file
       const data = await request.file()
-      
+
       if (!data) {
         return reply.status(400).send({
           error: 'No file uploaded',
@@ -75,58 +65,23 @@ export default async function uploadRoutes(fastify, opts) {
       // Generate unique filename
       const fileExt = data.filename.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-      
-      // Upload to Supabase Storage using stream
-      // duplex: 'half' is required for Node.js environments with node-fetch under the hood
-      // Use supabaseAdmin to bypass RLS
-      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-        .from(bucketName)
-        .upload(fileName, data.file, {
-          contentType: data.mimetype,
-          upsert: false,
-          duplex: 'half'
-        })
 
-      if (uploadError) {
-        console.error('Supabase upload error:', uploadError)
+      // Convert stream to buffer
+      const fileBuffer = await data.toBuffer()
+
+      // Upload to S3
+      const uploadResult = await uploadToS3(fileBuffer, fileName, data.mimetype, folderName)
+
+      if (!uploadResult.success) {
         return reply.status(500).send({
           error: 'Upload failed',
-          message: uploadError.message
+          message: 'Failed to upload file to S3'
         })
-      }
-
-      // Get URL (Public or Signed based on bucket)
-      let fileUrl
-      if (bucketName === 'banners') {
-        // Banners bucket is private, generate signed URL
-        const { data: signedData, error: signedError } = await supabaseAdmin.storage
-          .from(bucketName)
-          .createSignedUrl(fileName, 60 * 60 * 24 * 365) // 1 year validity
-
-        if (signedError) {
-           console.error('Signed URL generation error:', signedError)
-           fileUrl = null
-        } else {
-           fileUrl = signedData.signedUrl
-        }
-      } else {
-        // Public bucket
-        const { data: urlData } = supabaseAdmin.storage
-          .from(bucketName)
-          .getPublicUrl(fileName)
-        fileUrl = urlData.publicUrl
-      }
-
-      if (!fileUrl) {
-         return reply.status(500).send({
-           error: 'URL generation failed',
-           message: 'Could not generate URL for the uploaded file'
-         })
       }
 
       return {
         success: true,
-        url: fileUrl,
+        url: uploadResult.url,
         fileName: fileName
       }
 
@@ -139,11 +94,11 @@ export default async function uploadRoutes(fastify, opts) {
     }
   })
 
-  // POST /upload/images - Upload multiple images
+  // POST /upload/images - Upload multiple images to AWS S3
   fastify.post('/upload/images', {
     schema: {
       tags: ['Upload'],
-      description: 'Upload multiple images to Supabase Storage',
+      description: 'Upload multiple images to AWS S3',
       consumes: ['multipart/form-data'],
       querystring: {
         type: 'object',
@@ -179,58 +134,35 @@ export default async function uploadRoutes(fastify, opts) {
         })
       }
 
-      const bucketName = getBucketName(request.query.type)
+      const folderName = getFolderName(request.query.type)
       const uploadResults = []
       const parts = request.parts()
-      
+
       for await (const part of parts) {
         if (part.file) {
           try {
-             // Validate file type
+            // Validate file type
             if (!part.mimetype.startsWith('image/')) {
               // We must consume the stream even if we ignore it to prevent hanging
-              await part.toBuffer() 
-              continue 
+              await part.toBuffer()
+              continue
             }
 
             // Generate unique filename
             const fileExt = part.filename.split('.').pop()
             const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-            
-            // Upload to Supabase Storage using stream
-            // Use supabaseAdmin to bypass RLS
-            const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-              .from(bucketName)
-              .upload(fileName, part.file, {
-                contentType: part.mimetype,
-                upsert: false,
-                duplex: 'half'
+
+            // Convert stream to buffer
+            const fileBuffer = await part.toBuffer()
+
+            // Upload to S3
+            const uploadResult = await uploadToS3(fileBuffer, fileName, part.mimetype, folderName)
+
+            if (uploadResult.success) {
+              uploadResults.push({
+                url: uploadResult.url,
+                fileName: fileName
               })
-
-            if (!uploadError) {
-              // Get URL (Public or Signed based on bucket)
-              let fileUrl
-              if (bucketName === 'banners') {
-                const { data: signedData, error: signedError } = await supabaseAdmin.storage
-                  .from(bucketName)
-                  .createSignedUrl(fileName, 60 * 60 * 24 * 365) // 1 year validity
-                
-                if (!signedError) fileUrl = signedData.signedUrl
-              } else {
-                const { data: urlData } = supabaseAdmin.storage
-                  .from(bucketName)
-                  .getPublicUrl(fileName)
-                fileUrl = urlData.publicUrl
-              }
-
-              if (fileUrl) {
-                uploadResults.push({
-                  url: fileUrl,
-                  fileName: fileName
-                })
-              }
-            } else {
-              console.error('File upload error:', uploadError)
             }
           } catch (fileError) {
             console.error('File processing error:', fileError)
@@ -259,11 +191,11 @@ export default async function uploadRoutes(fastify, opts) {
     }
   })
 
-  // DELETE /upload/:fileName - Delete image from Supabase Storage
+  // DELETE /upload/:fileName - Delete image from AWS S3
   fastify.delete('/upload/:fileName', {
     schema: {
       tags: ['Upload'],
-      description: 'Delete image from Supabase Storage',
+      description: 'Delete image from AWS S3',
       params: {
         type: 'object',
         properties: {
@@ -289,18 +221,10 @@ export default async function uploadRoutes(fastify, opts) {
   }, async (request, reply) => {
     try {
       const { fileName } = request.params
-      const bucketName = getBucketName(request.query.type)
+      const folderName = getFolderName(request.query.type)
+      const key = `${folderName}/${fileName}`
 
-      const { error } = await supabaseAdmin.storage
-        .from(bucketName)
-        .remove([fileName])
-
-      if (error) {
-        return reply.status(500).send({
-          error: 'Delete failed',
-          message: error.message
-        })
-      }
+      await deleteFromS3(key)
 
       return {
         success: true,

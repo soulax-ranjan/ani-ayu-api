@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     occasion VARCHAR(100),
     age_range VARCHAR(50),
     features JSONB DEFAULT '[]'::jsonb, -- Array of product features
+    size_chart JSONB DEFAULT '{}'::jsonb, -- Detailed size chart
     in_stock BOOLEAN DEFAULT true,
     featured BOOLEAN DEFAULT false,
     sort_order INTEGER DEFAULT 0,

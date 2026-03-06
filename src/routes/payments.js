@@ -2,6 +2,7 @@ import fp from 'fastify-plugin'
 import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
 import crypto from 'node:crypto'
 import Razorpay from 'razorpay'
+import { sendOrderConfirmationToQueue } from '../lib/sqs.js'
 
 async function paymentRoutes(fastify, options) {
   const { z } = await import('zod')
@@ -281,20 +282,85 @@ async function paymentRoutes(fastify, options) {
       }
 
       // 6. Update Order Status
-      const { error: updateOrderError } = await supabaseAdmin
+      const { data: confirmedOrder, error: updateOrderError } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .update({
           payment_status: 'paid',
-          status: 'confirmed', // Move from pending to confirmed
-          cart_snapshot: null, // Clear snapshot after processing
+          status: 'confirmed',
+          cart_snapshot: null,
           updated_at: new Date().toISOString()
         })
         .eq('id', paymentRecord.order_id)
+        .select('id, razorpay_order_id, total_amount, currency, customer_email, guest_email, user_id')
+        .single()
 
       if (updateOrderError) {
         console.error('Failed to update order status after payment', updateOrderError)
-        // This is a critical error - payment succeeded but order update failed
-        // You may want to implement a retry mechanism or alert system here
+      }
+
+      // 7. Enqueue order confirmation email via SQS
+      try {
+        const orderId = confirmedOrder?.id || paymentRecord.order_id
+        // Use razorpay_order_id as the display order reference (already stored, unique)
+        const orderNumber = confirmedOrder?.razorpay_order_id || paymentRecord.razorpay_order_id
+
+        // Resolve customer email
+        const customerEmail = confirmedOrder?.guest_email
+          || confirmedOrder?.customer_email
+          || order.guest_email
+
+        // Fetch address with customer name
+        const { data: addressData } = await supabaseAdmin
+          .from('addresses')
+          .select('name, full_name, address_line1, address_line2, city, state, pincode, country, phone')
+          .eq('id', order.address_id)
+          .single()
+
+        const shippingAddress = addressData || order.address || null
+        const customerName = shippingAddress?.name || shippingAddress?.full_name || 'Valued Customer'
+
+        // Build items — fetch product names from DB if missing in snapshot
+        const cartItems = order.cart_snapshot || []
+        let emailItems = cartItems.map(item => ({
+          name: item.name || item.product_name || 'Product',
+          quantity: item.quantity,
+          price_at_purchase: item.price_at_purchase,
+          size: item.size || null,
+          color: item.color || null
+        }))
+
+        const productIds = cartItems.filter(i => !i.name && !i.product_name && i.product_id).map(i => i.product_id)
+        if (productIds.length > 0) {
+          const { data: products } = await supabaseAdmin
+            .from('products')
+            .select('id, name')
+            .in('id', productIds)
+
+          if (products) {
+            const productMap = Object.fromEntries(products.map(p => [p.id, p.name]))
+            emailItems = cartItems.map(item => ({
+              name: productMap[item.product_id] || item.name || 'Product',
+              quantity: item.quantity,
+              price_at_purchase: item.price_at_purchase,
+              size: item.size || null,
+              color: item.color || null
+            }))
+          }
+        }
+
+        await sendOrderConfirmationToQueue({
+          orderId,
+          orderNumber,
+          customerEmail,
+          customerName,
+          totalAmount: confirmedOrder?.total_amount || order.total_amount,
+          currency: confirmedOrder?.currency || 'INR',
+          items: emailItems,
+          address: shippingAddress
+        })
+      } catch (sqsError) {
+        // Non-critical — log but don't fail the payment response
+        console.error('⚠️  Failed to enqueue order confirmation email:', sqsError.message)
       }
 
       return {

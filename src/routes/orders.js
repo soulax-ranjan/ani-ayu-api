@@ -9,7 +9,7 @@ async function orderRoutes(fastify, options) {
     const userId = request.user?.sub
     const guestId = request.headers['x-guest-id']
     if (!userId && !guestId) {
-       throw { status: 401, message: 'Unauthorized' }
+      throw { status: 401, message: 'Unauthorized' }
     }
     return { userId, guestId }
   }
@@ -65,17 +65,16 @@ async function orderRoutes(fastify, options) {
     }
   })
 
-  // POST /orders/track - Track order by Email and Phone (Public)
-  fastify.post('/orders/track', {
+  // GET /orders/track/:orderId - Track order by Razorpay Order ID (Public)
+  fastify.get('/orders/track/:orderId', {
     schema: {
       tags: ['Orders'],
-      description: 'Track guest orders using Email and Phone',
-      body: {
+      description: 'Track any order using the Razorpay Order ID shown in the confirmation email (e.g. order_XXXXXXXXX)',
+      params: {
         type: 'object',
-        required: ['email', 'phone'],
+        required: ['orderId'],
         properties: {
-          email: { type: 'string', format: 'email' },
-          phone: { type: 'string' }
+          orderId: { type: 'string', description: 'Razorpay order ID from confirmation email, e.g. order_P3t4B1rY8bAOme' }
         }
       },
       response: {
@@ -83,36 +82,45 @@ async function orderRoutes(fastify, options) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            orders: { type: 'array' }
+            order: { type: 'object', additionalProperties: true }
+          }
+        },
+        404: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            message: { type: 'string' }
           }
         }
       }
     }
   }, async (request, reply) => {
     try {
-      const { email, phone } = request.body
+      const { orderId } = request.params
 
-      // Find orders where guest_email matches AND the associated address has the matching phone
-      // We use !inner on address to ensure the filter applies
-      const { data: orders, error } = await supabaseAdmin
+      const { data: order, error } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .select(`
           *,
-          address:addresses!inner(*),
+          address:addresses(*),
           items:order_items(
             *,
             product:products(*)
           )
         `)
-        .eq('guest_email', email)
-        .eq('address.phone', phone)
-        .order('created_at', { ascending: false })
+        .eq('razorpay_order_id', orderId)
+        .single()
 
-      if (error) return handleSupabaseError(error, reply)
+      if (error || !order) {
+        return reply.status(404).send({
+          error: 'Order Not Found',
+          message: 'No order found with the provided order ID'
+        })
+      }
 
       return {
         success: true,
-        orders: orders || []
+        order
       }
 
     } catch (error) {
@@ -213,7 +221,7 @@ async function orderRoutes(fastify, options) {
       if (status) {
         query = query.eq('status', status)
       }
-      
+
       if (search) {
         query = query.or(`order_number.ilike.%${search}%,customer_email.ilike.%${search}%`)
       }
@@ -295,7 +303,7 @@ async function orderRoutes(fastify, options) {
         type: 'object',
         required: ['status'],
         properties: {
-          status: { 
+          status: {
             type: 'string',
             enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled']
           }
@@ -315,7 +323,7 @@ async function orderRoutes(fastify, options) {
         .single()
 
       if (error) return handleSupabaseError(error, reply)
-      
+
       return {
         success: true,
         message: 'Order status updated',

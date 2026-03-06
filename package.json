@@ -11,7 +11,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "compress-images": "node scripts/compress-images.js",
     "migrate-to-s3": "node scripts/migrate-to-s3.js",
-    "test-s3": "node scripts/test-s3-connection.js"
+    "test-s3": "node scripts/test-s3-connection.js",
+    "test-sqs-email": "node scripts/test-sqs-email.js"
   },
   "keywords": [
     "fastify",
@@ -23,6 +24,8 @@
   "license": "MIT",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",
+    "@aws-sdk/client-ses": "^3.1000.0",
+    "@aws-sdk/client-sqs": "^3.1000.0",
     "@aws-sdk/s3-request-presigner": "^3.985.0",
     "@fastify/cookie": "^9.4.0",
     "@fastify/cors": "^8.4.0",

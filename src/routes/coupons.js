@@ -28,7 +28,7 @@ async function couponRoutes(fastify, options) {
                     type: 'object',
                     properties: {
                         valid: { type: 'boolean' },
-                        coupon: { type: 'object' },
+                        coupon: { type: 'object', additionalProperties: true },
                         discount: { type: 'number' },
                         finalAmount: { type: 'number' },
                         message: { type: 'string' }

@@ -3,11 +3,13 @@ import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
 
 async function checkoutRoutes(fastify, options) {
   const { z } = await import('zod')
+  const crypto = await import('crypto')
 
   const checkoutSchema = z.object({
     addressId: z.string().uuid(),
     paymentMethod: z.enum(['cod', 'card', 'upi']).default('cod'),
-    cartItemIds: z.array(z.string().uuid()).optional()
+    cartItemIds: z.array(z.string().uuid()).optional(),
+    couponCode: z.string().optional()
   })
 
   // POST /checkout - Place an order
@@ -22,13 +24,14 @@ async function checkoutRoutes(fastify, options) {
         properties: {
           addressId: { type: 'string', format: 'uuid' },
           paymentMethod: { type: 'string', enum: ['cod', 'card', 'upi'] },
-          cartItemIds: { type: 'array', items: { type: 'string', format: 'uuid' } }
+          cartItemIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+          couponCode: { type: 'string' }
         }
       }
     }
   }, async (request, reply) => {
     try {
-      const { addressId, paymentMethod, cartItemIds } = checkoutSchema.parse(request.body)
+      const { addressId, paymentMethod, cartItemIds, couponCode } = checkoutSchema.parse(request.body)
       const userId = request.user?.sub
       const guestId = request.headers['x-guest-id']
 
@@ -73,7 +76,43 @@ async function checkoutRoutes(fastify, options) {
       }
 
       // 3. Calculate Total and Validate Stock
-      const totalAmount = items.reduce((sum, item) => sum + (item.products.price * item.quantity), 0)
+      let totalAmount = items.reduce((sum, item) => sum + (item.products.price * item.quantity), 0)
+      let discountAmount = 0
+
+      const orderId = crypto.randomUUID()
+
+      // 3.5 Check and apply Coupon
+      let validCoupon = null;
+      if (couponCode) {
+        const { data: coupon, error: couponError } = await supabaseAdmin
+          .from('coupons')
+          .select('*')
+          .eq('code', couponCode.toUpperCase())
+          .eq('is_active', true)
+          .single()
+
+        if (couponError || !coupon) {
+          return reply.status(400).send({ error: 'Invalid or inapplicable coupon: Invalid coupon' })
+        }
+
+        let tempDiscount = 0
+        if (coupon.discount_type === 'percentage') {
+          tempDiscount = (totalAmount * coupon.discount_value) / 100
+          if (coupon.max_discount_amount && tempDiscount > coupon.max_discount_amount) {
+            tempDiscount = coupon.max_discount_amount
+          }
+        } else {
+          tempDiscount = coupon.discount_value
+        }
+
+        if (tempDiscount > totalAmount) {
+          tempDiscount = totalAmount
+        }
+
+        discountAmount = Math.round(tempDiscount * 100) / 100
+        totalAmount = totalAmount - discountAmount
+        validCoupon = coupon;
+      }
 
       // 4. Get Address (and Email for Guest)
       const { data: address, error: addressError } = await supabaseAdmin
@@ -100,6 +139,7 @@ async function checkoutRoutes(fastify, options) {
       }))
 
       const orderData = {
+        id: orderId,
         user_id: userId || null,
         guest_id: userId ? null : guestId,
         guest_email: request.user?.email || address.email,
@@ -108,6 +148,8 @@ async function checkoutRoutes(fastify, options) {
         status: 'pending',
         payment_status: 'pending',
         payment_method: paymentMethod,
+        coupon_code: couponCode && discountAmount > 0 ? couponCode : null,
+        discount_amount: discountAmount,
         // Store cart snapshot for online payments
         cart_snapshot: isOnlinePayment ? cartSnapshot : null
       }
@@ -119,6 +161,29 @@ async function checkoutRoutes(fastify, options) {
         .single()
 
       if (orderError) return handleSupabaseError(orderError, reply)
+
+      // 5.5 Record coupon usage now that order exists (prevent foreign key violation)
+      if (validCoupon) {
+        const { error: usageError } = await supabaseAdmin
+          .from('coupon_usage')
+          .insert({
+            coupon_id: validCoupon.id,
+            user_id: userId || null,
+            guest_id: userId ? null : guestId,
+            order_id: order.id,
+            discount_amount: discountAmount,
+            order_amount: totalAmount + discountAmount
+          })
+
+        if (!usageError) {
+          await supabaseAdmin
+            .from('coupons')
+            .update({ current_uses: validCoupon.current_uses + 1 })
+            .eq('id', validCoupon.id)
+        } else {
+          console.error('Failed to log coupon usage', usageError)
+        }
+      }
 
       // For COD: Finalize order immediately (insert items, clear cart)
       if (!isOnlinePayment) {

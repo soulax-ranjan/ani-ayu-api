@@ -1,14 +1,70 @@
-service: node-api
+service: ani-ayu-email
 
 provider:
   name: aws
   runtime: nodejs18.x
   region: ap-south-1
-  memorySize: 512
-  timeout: 10
+  memorySize: 256
+  timeout: 30
+  environment:
+    SQS_ORDER_CONFIRMATION_QUEUE_URL: !Ref OrderConfirmationQueue
+    SES_FROM_EMAIL: ${env:SES_FROM_EMAIL, 'support@aniayu.com'}
+    FRONTEND_URL: ${env:FRONTEND_URL, 'https://aniayu.in'}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource: !GetAtt OrderConfirmationQueue.Arn
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource: '*'
 
 functions:
-  api:
-    handler: app.handler
+  # Email consumer — triggered by SQS
+  emailConsumer:
+    handler: src/services/emailConsumer.handler
+    description: Sends order confirmation emails via SES from SQS messages
     events:
-      - httpApi: "*"
+      - sqs:
+          arn: !GetAtt OrderConfirmationQueue.Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+
+resources:
+  Resources:
+    # SQS Queue for order confirmation emails
+    OrderConfirmationQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ani-ayu-order-confirmation-${sls:stage}
+        VisibilityTimeout: 60         # Must be >= Lambda timeout
+        MessageRetentionPeriod: 86400 # 1 day
+        ReceiveMessageWaitTimeSeconds: 20 # Long polling
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt OrderConfirmationDLQ.Arn
+          maxReceiveCount: 3          # Retry 3 times before DLQ
+
+    # Dead Letter Queue — holds failed messages for inspection
+    OrderConfirmationDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ani-ayu-order-confirmation-dlq-${sls:stage}
+        MessageRetentionPeriod: 604800 # 7 days
+
+  Outputs:
+    OrderConfirmationQueueUrl:
+      Description: SQS Queue URL for order confirmation emails
+      Value: !Ref OrderConfirmationQueue
+    OrderConfirmationQueueArn:
+      Description: SQS Queue ARN
+      Value: !GetAtt OrderConfirmationQueue.Arn
+    OrderConfirmationDLQUrl:
+      Description: Dead Letter Queue URL
+      Value: !Ref OrderConfirmationDLQ

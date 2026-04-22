@@ -257,6 +257,139 @@ async function authRoutes(fastify, options) {
     }
   })
 
+  // POST /admin/login - Login for admin portal only
+  fastify.post('/admin/login', {
+    schema: {
+      tags: ['Authentication'],
+      description: 'Login for admin portal only',
+      body: {
+        type: 'object',
+        required: ['email', 'password'],
+        properties: {
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { email, password } = loginSchema.parse(request.body)
+
+      // Get user
+      const { data: user, error } = await supabaseAdmin
+        .from(TABLES.USERS)
+        .select('*')
+        .eq('email', email)
+        .single()
+
+      if (error || !user) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Invalid email or password'
+        })
+      }
+
+      // STRICT CHECK: Must be an admin
+      if (user.role !== 'admin') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied. Admin privileges required.'
+        })
+      }
+
+      // Verify password
+      const validPassword = await bcrypt.compare(password, user.password_hash)
+      if (!validPassword) {
+        return reply.status(401).send({
+          error: 'Unauthorized',
+          message: 'Invalid email or password'
+        })
+      }
+
+      // Generate JWT
+      const token = fastify.jwt.sign({ 
+        sub: user.id, 
+        email: user.email, 
+        role: user.role 
+      })
+
+      return {
+        success: true,
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role
+        }
+      }
+    } catch (error) {
+       if (error instanceof z.ZodError) {
+        return reply.status(400).send({
+          error: 'Validation Error',
+          message: 'Invalid input data',
+          details: error.errors
+        })
+      }
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Admin login failed'
+      })
+    }
+  })
+
+  // GET /auth/admin/me - Get current admin profile
+  fastify.get('/auth/admin/me', {
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ['Authentication'],
+      description: 'Get current admin profile',
+      security: [{ bearerAuth: [] }]
+    }
+  }, async (request, reply) => {
+    try {
+      const userId = request.user.sub
+      
+      const { data: user, error } = await supabaseAdmin
+        .from(TABLES.USERS)
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (error || !user) {
+        return reply.status(404).send({
+          error: 'Not Found',
+          message: 'User not found'
+        })
+      }
+
+      // Verify they are still an admin
+      if (user.role !== 'admin') {
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Access denied'
+        })
+      }
+
+      return {
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role
+        }
+      }
+    } catch (error) {
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to fetch admin profile'
+      })
+    }
+  })
+
   // POST /guest/session
   fastify.post('/guest/session', {
     schema: {

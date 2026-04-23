@@ -335,6 +335,57 @@ async function orderRoutes(fastify, options) {
       return reply.status(500).send({ error: 'Internal Server Error' })
     }
   })
+
+  // DELETE /orders/:id - Admin: Delete order
+  fastify.delete('/orders/:id', {
+    schema: {
+      tags: ['Orders'],
+      description: 'Admin: Delete an order',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params
+
+      // Check if order exists
+      const { data: order, error: fetchError } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select('id')
+        .eq('id', id)
+        .single()
+
+      if (fetchError || !order) {
+        return reply.status(404).send({
+          error: 'Order Not Found',
+          message: `Order with ID '${id}' not found`
+        })
+      }
+
+      // Delete the order
+      const { error: deleteError } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .delete()
+        .eq('id', id)
+
+      if (deleteError) {
+        return handleSupabaseError(deleteError, reply)
+      }
+
+      return {
+        success: true,
+        message: 'Order deleted successfully'
+      }
+
+    } catch (error) {
+      console.error('Admin delete order error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to delete order' })
+    }
+  })
 }
 
 export default fp(orderRoutes)

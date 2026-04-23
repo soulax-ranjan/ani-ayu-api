@@ -5,6 +5,7 @@ const sesClient = new SESClient({
 })
 
 const FROM_EMAIL = process.env.SES_FROM_EMAIL || 'noreply@aniayu.in'
+const ADMIN_EMAILS = ['support@aniayu.com', 'aarunyathreads@gmail.com']
 
 /**
  * AWS Lambda handler — triggered by SQS events.
@@ -67,6 +68,60 @@ export const handler = async (event) => {
 
       await sesClient.send(command)
       console.log(`✅ Order confirmation email sent to ${customerEmail} for order ${orderNumber}`)
+      
+      // Send admin notification email
+      try {
+        const adminEmailHtml = buildAdminNotificationHtml({
+          orderId,
+          orderNumber,
+          customerEmail,
+          customerName,
+          totalAmount,
+          currency,
+          items,
+          address
+        })
+
+        const adminEmailText = buildAdminNotificationText({
+          orderNumber,
+          customerEmail,
+          customerName,
+          totalAmount,
+          currency,
+          items,
+          address
+        })
+
+        const adminCommand = new SendEmailCommand({
+          Source: `Ani & Ayu Orders <${FROM_EMAIL}>`,
+          Destination: {
+            ToAddresses: ADMIN_EMAILS
+          },
+          Message: {
+            Subject: {
+              Data: `🛍️ You received an order - #${orderNumber}`,
+              Charset: 'UTF-8'
+            },
+            Body: {
+              Html: {
+                Data: adminEmailHtml,
+                Charset: 'UTF-8'
+              },
+              Text: {
+                Data: adminEmailText,
+                Charset: 'UTF-8'
+              }
+            }
+          }
+        })
+
+        await sesClient.send(adminCommand)
+        console.log(`✅ Admin notification sent for order ${orderNumber} to ${ADMIN_EMAILS.join(', ')}`)
+      } catch (adminError) {
+        console.error(`⚠️ Failed to send admin notification for order ${orderNumber}:`, adminError)
+        // Don't throw - customer email was sent successfully
+      }
+      
       results.push({ status: 'sent', orderId, customerEmail, messageId: record.messageId })
 
     } catch (error) {
@@ -234,5 +289,144 @@ function buildOrderConfirmationText({ orderNumber, customerName, totalAmount, cu
     'We\'ll notify you once your order ships.',
     '',
     '— Ani & Ayu Team'
+  ].join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// Admin notification email templates
+// ---------------------------------------------------------------------------
+
+function buildAdminNotificationHtml({ orderNumber, customerEmail, customerName, totalAmount, currency, items, address }) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>New Order - ${orderNumber}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:#28a745;padding:24px 32px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;">🛍️ New Order Received!</h1>
+              <p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">Order #${orderNumber}</p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px;">
+
+              <!-- Order Info -->
+              <div style="background:#f8f9fa;border-left:4px solid #28a745;padding:16px 20px;margin-bottom:24px;border-radius:4px;">
+                <p style="margin:0 0 4px;font-size:12px;color:#666;text-transform:uppercase;letter-spacing:1px;">Order ID</p>
+                <p style="margin:0;font-size:20px;font-weight:700;color:#28a745;">#${orderNumber}</p>
+              </div>
+
+              <!-- Customer Details -->
+              <div style="margin-bottom:24px;">
+                <p style="margin:0 0 12px;font-size:16px;font-weight:600;color:#333;">Customer Details</p>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e9ecef;border-radius:6px;overflow:hidden;">
+                  <tr>
+                    <td style="padding:12px 16px;background:#f8f9fa;font-weight:600;color:#495057;width:140px;border-bottom:1px solid #e9ecef;">Name</td>
+                    <td style="padding:12px 16px;color:#212529;border-bottom:1px solid #e9ecef;">${customerName || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 16px;background:#f8f9fa;font-weight:600;color:#495057;border-bottom:1px solid #e9ecef;">Email</td>
+                    <td style="padding:12px 16px;color:#212529;border-bottom:1px solid #e9ecef;"><a href="mailto:${customerEmail}" style="color:#007bff;text-decoration:none;">${customerEmail}</a></td>
+                  </tr>
+                  ${address?.phone ? `
+                  <tr>
+                    <td style="padding:12px 16px;background:#f8f9fa;font-weight:600;color:#495057;">Phone</td>
+                    <td style="padding:12px 16px;color:#212529;"><a href="tel:${address.phone}" style="color:#007bff;text-decoration:none;">${address.phone}</a></td>
+                  </tr>
+                  ` : ''}
+                </table>
+              </div>
+
+              <!-- Shipping Address -->
+              ${address ? `
+              <div style="margin-bottom:24px;">
+                <p style="margin:0 0 12px;font-size:16px;font-weight:600;color:#333;">Shipping Address</p>
+                <div style="background:#f8f9fa;padding:16px;border-radius:6px;border:1px solid #e9ecef;">
+                  ${address.name ? `<p style="margin:0 0 8px;font-weight:600;color:#212529;">${address.name}</p>` : ''}
+                  ${buildAddressBlock(address)}
+                  ${address.phone ? `<p style="margin:8px 0 0;color:#6c757d;">📞 ${address.phone}</p>` : ''}
+                </div>
+              </div>
+              ` : ''}
+
+              <!-- Order Items -->
+              <p style="margin:0 0 12px;font-size:16px;font-weight:600;color:#333;">Order Items</p>
+              ${buildItemsTable(items)}
+
+              <!-- Total -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;background:#28a745;border-radius:6px;overflow:hidden;">
+                <tr>
+                  <td style="padding:16px 20px;font-size:16px;font-weight:700;color:#ffffff;">Total Amount</td>
+                  <td style="padding:16px 20px;font-size:20px;font-weight:700;color:#ffffff;text-align:right;">${formatCurrency(totalAmount, currency)}</td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f8f9fa;padding:20px 32px;text-align:center;border-top:1px solid #e9ecef;">
+              <p style="margin:0;font-size:13px;color:#6c757d;">
+                This is an automated notification from your Ani & Ayu store.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim()
+}
+
+function buildAdminNotificationText({ orderNumber, customerEmail, customerName, totalAmount, currency, items, address }) {
+  const itemsList = items.map(item => 
+    `  - ${item.name} (Qty: ${item.quantity}) - ${formatCurrency(item.price_at_purchase)}`
+  ).join('\n')
+
+  const addressText = address ? [
+    '',
+    'SHIPPING ADDRESS:',
+    address.name || '',
+    address.address_line1 || '',
+    address.address_line2 || '',
+    `${address.city || ''}, ${address.state || ''} ${address.pincode || ''}`,
+    address.country || '',
+    address.phone ? `Phone: ${address.phone}` : ''
+  ].filter(Boolean).join('\n') : ''
+
+  return [
+    '🛍️ NEW ORDER RECEIVED',
+    '',
+    `Order #${orderNumber}`,
+    '',
+    'CUSTOMER DETAILS:',
+    `Name: ${customerName || 'N/A'}`,
+    `Email: ${customerEmail}`,
+    addressText,
+    '',
+    'ORDER ITEMS:',
+    itemsList,
+    '',
+    `TOTAL: ${formatCurrency(totalAmount, currency)}`,
+    '',
+    '—',
+    'Ani & Ayu Admin Notification'
   ].join('\n')
 }

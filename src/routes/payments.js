@@ -309,6 +309,11 @@ async function paymentRoutes(fastify, options) {
           || confirmedOrder?.customer_email
           || order.guest_email
 
+        if (!customerEmail) {
+          console.error('⚠️  No customer email found for order:', orderId)
+          throw new Error('Customer email is required for order confirmation')
+        }
+
         // Fetch address with customer name
         const { data: addressData } = await supabaseAdmin
           .from('addresses')
@@ -358,9 +363,12 @@ async function paymentRoutes(fastify, options) {
           items: emailItems,
           address: shippingAddress
         })
+        
+        console.log(`✅ Order confirmation email queued for order ${orderNumber} to ${customerEmail}`)
       } catch (sqsError) {
         // Non-critical — log but don't fail the payment response
         console.error('⚠️  Failed to enqueue order confirmation email:', sqsError.message)
+        console.error('   Error details:', sqsError)
       }
 
       return {

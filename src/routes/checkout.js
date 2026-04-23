@@ -1,5 +1,6 @@
 import fp from 'fastify-plugin'
 import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
+import { sendOrderConfirmationToQueue } from '../lib/sqs.js'
 
 async function checkoutRoutes(fastify, options) {
   const { z } = await import('zod')

@@ -1,4 +1,19 @@
 import { uploadToS3, deleteFromS3, getPresignedUrl, getPublicUrl, getFolderName } from '../lib/s3.js'
+import { processUpload, UnsupportedImageError, IMMUTABLE_CACHE_CONTROL } from '../lib/imageProcessing.js'
+
+/**
+ * Convert an uploaded image (WebP, max 1600px) and store it under a unique timestamped key
+ */
+async function storeImage(fileBuffer, folderName) {
+  const image = await processUpload(fileBuffer)
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${image.ext}`
+
+  const uploadResult = await uploadToS3(image.buffer, fileName, image.contentType, folderName, {
+    cacheControl: IMMUTABLE_CACHE_CONTROL
+  })
+
+  return { ...uploadResult, fileName }
+}
 
 export default async function uploadRoutes(fastify, opts) {
 
@@ -62,15 +77,11 @@ export default async function uploadRoutes(fastify, opts) {
         })
       }
 
-      // Generate unique filename
-      const fileExt = data.filename.split('.').pop()
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-
       // Convert stream to buffer
       const fileBuffer = await data.toBuffer()
 
-      // Upload to S3
-      const uploadResult = await uploadToS3(fileBuffer, fileName, data.mimetype, folderName)
+      // Convert and upload to S3
+      const uploadResult = await storeImage(fileBuffer, folderName)
 
       if (!uploadResult.success) {
         return reply.status(500).send({
@@ -82,10 +93,16 @@ export default async function uploadRoutes(fastify, opts) {
       return {
         success: true,
         url: uploadResult.url,
-        fileName: fileName
+        fileName: uploadResult.fileName
       }
 
     } catch (error) {
+      if (error instanceof UnsupportedImageError) {
+        return reply.status(400).send({
+          error: 'Invalid file type',
+          message: 'Could not read this image. Please upload a JPEG, PNG or WebP file.'
+        })
+      }
       console.error('Upload error:', error)
       return reply.status(500).send({
         error: 'Internal Server Error',
@@ -148,20 +165,16 @@ export default async function uploadRoutes(fastify, opts) {
               continue
             }
 
-            // Generate unique filename
-            const fileExt = part.filename.split('.').pop()
-            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-
             // Convert stream to buffer
             const fileBuffer = await part.toBuffer()
 
-            // Upload to S3
-            const uploadResult = await uploadToS3(fileBuffer, fileName, part.mimetype, folderName)
+            // Convert and upload to S3
+            const uploadResult = await storeImage(fileBuffer, folderName)
 
             if (uploadResult.success) {
               uploadResults.push({
                 url: uploadResult.url,
-                fileName: fileName
+                fileName: uploadResult.fileName
               })
             }
           } catch (fileError) {

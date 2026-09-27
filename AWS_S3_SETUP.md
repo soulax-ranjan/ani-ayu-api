@@ -255,17 +255,8 @@ If you're migrating from Supabase storage:
 
 ### Bulk Migration Script
 
-You can use the image compression service to migrate and compress images:
-
-```bash
-npm run compress-images
-```
-
-This will:
-- Download images from their current location
-- Compress them if needed
-- Upload to S3
-- Update database URLs
+To convert oversized images already in S3 to WebP, use `npm run migrate-images-to-webp`
+(dry run by default). See "Image Optimization" in the README.
 
 ## Additional Resources
 

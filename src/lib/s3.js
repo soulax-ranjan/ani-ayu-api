@@ -18,9 +18,10 @@ const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME
  * @param {string} fileName - Name of the file in S3
  * @param {string} contentType - MIME type of the file
  * @param {string} folder - Optional folder path (e.g., 'products', 'banners')
+ * @param {{cacheControl?: string}} options - Optional extra object headers
  * @returns {Promise<{success: boolean, key: string, url: string}>}
  */
-export async function uploadToS3(fileContent, fileName, contentType, folder = 'uploads') {
+export async function uploadToS3(fileContent, fileName, contentType, folder = 'uploads', { cacheControl } = {}) {
     try {
         const key = folder ? `${folder}/${fileName}` : fileName
 
@@ -28,7 +29,8 @@ export async function uploadToS3(fileContent, fileName, contentType, folder = 'u
             Bucket: BUCKET_NAME,
             Key: key,
             Body: fileContent,
-            ContentType: contentType
+            ContentType: contentType,
+            ...(cacheControl && { CacheControl: cacheControl })
             // Note: ACL removed - bucket uses bucket-level public access policy
         })
 

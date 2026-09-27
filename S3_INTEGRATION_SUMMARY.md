@@ -30,10 +30,9 @@ Successfully migrated image storage from Supabase Storage to AWS S3. This change
 - Updated delete endpoint
 - All endpoints now use S3 instead of Supabase
 
-#### Image Compression Service (`src/services/imageCompression.js`)
-- Updated to work with S3 URLs instead of Supabase URLs
-- Modified upload and delete functions to use S3
-- Updated URL parsing for S3 format
+#### Image Optimization (`src/lib/imageProcessing.js`)
+- Uploads are converted to WebP (max 1600px, quality 80) before saving to S3
+- Existing images are migrated with `scripts/migrate-images-to-webp.js` (see README)
 
 #### Configuration Files
 - **`package.json`** - Added `migrate-to-s3` script

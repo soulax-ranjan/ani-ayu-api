@@ -8,9 +8,9 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "build": "echo 'No build step for ani-ayu-api'",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "compress-images": "node scripts/compress-images.js",
+    "test": "node --test \"test/**/*.test.js\"",
     "migrate-to-s3": "node scripts/migrate-to-s3.js",
+    "migrate-images-to-webp": "node scripts/migrate-images-to-webp.js",
     "test-s3": "node scripts/test-s3-connection.js",
     "test-sqs-email": "node scripts/test-sqs-email.js"
   },

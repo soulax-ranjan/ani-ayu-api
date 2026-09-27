@@ -19,6 +19,7 @@ async function productRoutes(fastify, options) {
     inStock: z.union([z.string(), z.boolean()]).transform(val => typeof val === 'string' ? val === 'true' : val).optional(),
     featured: z.union([z.string(), z.boolean()]).transform(val => typeof val === 'string' ? val === 'true' : val).optional(),
     search: z.string().optional(),
+    tag: z.string().optional(),
     sort: z.enum(['price-asc', 'price-desc', 'name', 'rating', 'newest']).optional(),
     limit: z.union([z.string(), z.number()]).transform(val => typeof val === 'string' ? Number(val) : val).optional(),
     offset: z.union([z.string(), z.number()]).transform(val => typeof val === 'string' ? Number(val) : val).default(0)
@@ -369,6 +370,7 @@ async function productRoutes(fastify, options) {
           inStock: { type: 'boolean', description: 'Filter by stock status' },
           featured: { type: 'boolean', description: 'Filter featured products' },
           search: { type: 'string', description: 'Search in product name and description' },
+          tag: { type: 'string', description: 'Only products that have this tag (exact match), e.g. "Sibling Set - Mint Green"' },
           sort: {
             type: 'string',
             enum: ['price-asc', 'price-desc', 'name', 'rating', 'newest'],
@@ -471,7 +473,12 @@ async function productRoutes(fastify, options) {
       }
 
       if (parsedQuery.size) {
-        supabaseQuery = supabaseQuery.contains('sizes', [parsedQuery.size])
+        supabaseQuery = supabaseQuery.contains('sizes', JSON.stringify([parsedQuery.size]))
+      }
+
+      if (parsedQuery.tag) {
+        // tags is JSONB, so the value must be JSON (a JS array would be sent as a Postgres array literal)
+        supabaseQuery = supabaseQuery.contains('tags', JSON.stringify([parsedQuery.tag]))
       }
 
       // Apply sorting
@@ -531,6 +538,7 @@ async function productRoutes(fastify, options) {
           category: parsedQuery.category,
           minPrice: parsedQuery.minPrice,
           maxPrice: parsedQuery.maxPrice,
+          tag: parsedQuery.tag,
           sort: parsedQuery.sort
         }
       }
@@ -727,6 +735,72 @@ async function productRoutes(fastify, options) {
       products: relatedProducts || [],
       total: relatedProducts?.length || 0
     }
+  })
+
+  // GET /api/products/:id/matching - Products sharing a tag with this product, grouped by tag
+  fastify.get('/products/:id/matching', {
+    schema: {
+      tags: ['Products'],
+      description: 'Get active products that share a tag with this product (e.g. the other pieces of a sibling set), grouped by tag in the order the tags are listed on the product',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' }
+        }
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', default: 8, description: 'Maximum products per tag' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params
+    const { limit = 8 } = request.query
+
+    const { data: product, error: productError } = await supabaseAdmin
+      .from(TABLES.PRODUCTS)
+      .select('tags')
+      .eq('id', id)
+      .single()
+
+    if (productError || !product) {
+      return reply.status(404).send({
+        error: 'Product Not Found',
+        message: `Product with ID '${id}' not found`
+      })
+    }
+
+    const tags = [...new Set((product.tags || []).map(tag => String(tag).trim()).filter(Boolean))]
+
+    // One query per tag: tags is JSONB, which supports "contains" but not "overlaps"
+    const results = await Promise.all(tags.map(tag =>
+      supabaseAdmin
+        .from(TABLES.PRODUCTS)
+        .select(`
+          *,
+          categories(name, slug)
+        `)
+        .contains('tags', JSON.stringify([tag]))
+        .eq('status', 'active')
+        .neq('id', id)
+        .order('featured', { ascending: false })
+        .order('rating', { ascending: false })
+        .limit(limit)
+    ))
+
+    const failed = results.find(result => result.error)
+    if (failed) {
+      const supabaseError = handleSupabaseError(failed.error)
+      return reply.status(500).send(supabaseError)
+    }
+
+    const groups = tags
+      .map((tag, index) => ({ tag, products: results[index].data || [] }))
+      .filter(group => group.products.length > 0)
+
+    return { groups }
   })
 
   // DELETE /api/products/:id - Delete product

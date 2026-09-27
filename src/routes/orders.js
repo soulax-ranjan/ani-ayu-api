@@ -1,5 +1,9 @@
 import fp from 'fastify-plugin'
 import { supabaseAdmin, TABLES, handleSupabaseError } from '../lib/supabase.js'
+import { normalizePhone, phoneSearchFilter, toPublicOrder, createRateLimiter } from '../lib/orderLookup.js'
+
+// 10 phone lookups per IP per 15 minutes, to make guessing numbers impractical
+const allowPhoneLookup = createRateLimiter({ limit: 10, windowMs: 15 * 60 * 1000 })
 
 async function orderRoutes(fastify, options) {
   const { z } = await import('zod')
@@ -125,6 +129,125 @@ async function orderRoutes(fastify, options) {
 
     } catch (error) {
       console.error('Track order error:', error)
+      return reply.status(500).send({ error: 'Internal Server Error' })
+    }
+  })
+
+  // POST /orders/lookup - Find orders by the phone number on the delivery address (Public)
+  fastify.post('/orders/lookup', {
+    schema: {
+      tags: ['Orders'],
+      description: 'Find orders using the phone number given at checkout. Returns status, items and totals; the delivery address and order number are masked.',
+      body: {
+        type: 'object',
+        required: ['phone'],
+        properties: {
+          phone: { type: 'string', description: '10-digit mobile number, with or without +91 and spaces' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            orders: { type: 'array', items: { type: 'object', additionalProperties: true } }
+          }
+        },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            message: { type: 'string' }
+          }
+        },
+        429: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      if (!allowPhoneLookup(request.ip)) {
+        return reply.status(429).send({
+          error: 'Too Many Requests',
+          message: 'Too many lookups. Please try again in 15 minutes.'
+        })
+      }
+
+      const phone = normalizePhone(request.body.phone)
+      if (!phone) {
+        return reply.status(400).send({
+          error: 'Invalid phone number',
+          message: 'Please enter a 10-digit mobile number'
+        })
+      }
+
+      // Phones are stored in several formats, so match loosely and then compare exactly
+      const { data: addresses, error: addressError } = await supabaseAdmin
+        .from(TABLES.ADDRESSES)
+        .select('id, phone')
+        .or(phoneSearchFilter(phone))
+
+      if (addressError) return handleSupabaseError(addressError, reply)
+
+      const addressIds = addresses
+        .filter(address => normalizePhone(address.phone) === phone)
+        .map(address => address.id)
+
+      if (addressIds.length === 0) return { success: true, orders: [] }
+
+      const { data: orders, error } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select(`
+          id,
+          razorpay_order_id,
+          created_at,
+          status,
+          payment_status,
+          payment_method,
+          total_amount,
+          discount_amount,
+          cart_snapshot,
+          address:addresses(full_name, phone, city, state, postal_code),
+          items:order_items(
+            quantity,
+            size,
+            color,
+            price_at_purchase,
+            product:products(name, image_url)
+          )
+        `)
+        .in('address_id', addressIds)
+        .order('created_at', { ascending: false })
+
+      if (error) return handleSupabaseError(error, reply)
+
+      // Online orders whose payment was not verified yet have no order_items, only a cart_snapshot
+      const snapshotProductIds = [...new Set(orders
+        .filter(order => !order.items?.length && Array.isArray(order.cart_snapshot))
+        .flatMap(order => order.cart_snapshot.map(item => item.product_id)))]
+
+      const productsById = new Map()
+      if (snapshotProductIds.length > 0) {
+        const { data: products, error: productError } = await supabaseAdmin
+          .from(TABLES.PRODUCTS)
+          .select('id, name, image_url')
+          .in('id', snapshotProductIds)
+        if (productError) return handleSupabaseError(productError, reply)
+        products.forEach(product => productsById.set(product.id, product))
+      }
+
+      return {
+        success: true,
+        orders: orders.map(order => toPublicOrder(order, productsById))
+      }
+
+    } catch (error) {
+      console.error('Order lookup error:', error)
       return reply.status(500).send({ error: 'Internal Server Error' })
     }
   })
